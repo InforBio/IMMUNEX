@@ -1,0 +1,60 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Temporary files and logs
+*.log
+*.tmp
+*.bak
+*.swp
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# Environment and dependency files
+.env
+.venv
+env/
+venv/
+envs/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Large raw or intermediate data
+data/raw/
+data/intermediate/
+
+# Image outputs
+results/figures/
+
+# Cache and temp files
+.cache/
+*.gz
+*.zip
+*.tar
+*.h5ad
+*.loom
+
+# Segmentations and masks
+*.tif
+*.tiff
+*.hdf5
+*.h5
+# *.png
+# *.jpg
+# *.jpeg
+
+# SpaceRanger output
+spaceranger_output/
+outs/
+
+# Bin2cell/StarDist generated labels
+*_labels.*
+*_mask.*
+
+# IDE and editor folders
+.vscode/
+.idea/
