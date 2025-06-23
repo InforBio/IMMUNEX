@@ -58,3 +58,6 @@ outs/
 # IDE and editor folders
 .vscode/
 .idea/
+
+enact_cache/*/chunks/*
+enact_cache/*/chunks
