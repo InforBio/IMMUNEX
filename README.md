@@ -1,2 +1,2 @@
 # IMMUNEX
-Analysis of VisiumHD data from 18 samples
+Analysis of Visium-HD data from 18 NSCLC samples
