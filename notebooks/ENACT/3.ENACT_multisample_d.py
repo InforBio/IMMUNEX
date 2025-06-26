@@ -95,7 +95,7 @@ if len(runonly):
                 imagestokeep.append(image)
     images = imagestokeep
 
-for image in images[0::1]:
+for image in images[1::1]:
     sample = image[:10]
     
     out_name = f"250626_001-{sample}"
@@ -114,8 +114,8 @@ for image in images[0::1]:
         cell_typist_model="Immune_All_Low",
         analysis_name=out_name,
         n_hvg = 1000,
-        cell_markers = cell_markers,
         patch_size = 5000,
+        cell_markers = cell_markers,
     )
 
     so_hd.run_enact()
