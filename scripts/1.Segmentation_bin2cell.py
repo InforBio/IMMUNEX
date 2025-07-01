@@ -108,7 +108,6 @@ for file in base_he_image_path.glob("*.tif"):
 sample_folders = sorted(base_sample_path.glob("Visium_NSCLC_*"))
 
 sample_to_skip = [
-    "IMMUNEX004"
 ]
 for sample_folder in sample_folders[1::] :
     IMMUNEXID = sample_folder.name.split("_")[-1]
