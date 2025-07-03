@@ -9,17 +9,20 @@ import cv2
 from pathlib import Path
 import bin2cell as b2c
 import tifffile
+from tqdm import tqdm
+import importlib
 
 # -------------------------------
 # USER-DEFINED PARAMETERS
 # -------------------------------
 
 # Input paths
-base_sample_path = Path("/scratch/IMMUNEX/OUTPUT")
-base_he_image_path = Path("/scratch/IMMUNEX/PJ2410310_250214/IMAGE/HE_nanozoomer_tif")
+base_sample_path = Path("/home/mounim/rawdata/IMMUNEX/OUTPUT")
+base_he_image_path = Path("/home/mounim/rawdata/IMMUNEX/PJ2410310_250214/IMAGE/HE_nanozoomer_tif")
 
 # Output path
 base_output_dir = Path("segmentation/bin2cell/bin2cell_output")
+os.makedirs(base_output_dir, exist_ok=True)
 
 # Microns per pixel
 mpp = 0.6
@@ -36,18 +39,18 @@ mask_region = {
 # StarDist settings for H&E
 stardist_he_params = {
     "stardist_model": "2D_versatile_he",
-    "block_size": 3000,
-    "min_overlap": 64,
+    "block_size": 4096,
+    "min_overlap": 128,
     "context": 128,
-    "prob_thresh": 0.1
+    "prob_thresh": 0.005
 }
 
 # StarDist settings for GEX
 stardist_gex_params = {
     "stardist_model": "2D_versatile_fluo",
-    "prob_thresh": 0.01,
+    "prob_thresh": 0.1,
     "nms_thresh": 0.1,
-    "block_size": 1000,
+    "block_size": 4096,
     "min_overlap": 250,
     "context": 128,
     "show_progress": True
@@ -61,7 +64,8 @@ cell_filter_min_counts = 1
 grid_image_sigma = 5
 
 # Logging configuration
-log_path = "segmentation/bin2cell/batch_processing.log"
+import os, sys
+log_path = base_output_dir / "batch_processing.log"
 logging.basicConfig(filename=log_path, level = logging.INFO,
                     format="%(asctime)s [%(levelname)s] %(message)s")
 
@@ -79,7 +83,7 @@ def patched_load_image(image_path, **kwargs):
         img = np.moveaxis(img, 0, -1)
     return img
 
-b2c.bin2cell.load_image = patched_load_image
+
 
 
 def print_log(message, type ="info"):
@@ -99,7 +103,7 @@ def print_log(message, type ="info"):
 
 # Match available HE images to IMMUNEX IDs
 nanozoomer_tif = {}
-for file in base_he_image_path.glob("*.tif"):
+for file in tqdm(base_he_image_path.glob("*.tif")) :
     match = re.match(r"(IMMUNEX\d+)(.*)\.tif", file.name)
     if match:
         sample_id, suffix = match.groups()
@@ -108,8 +112,15 @@ for file in base_he_image_path.glob("*.tif"):
 sample_folders = sorted(base_sample_path.glob("Visium_NSCLC_*"))
 
 sample_to_skip = [
+    'IMMUNEX001',
+    'IMMUNEX002',
 ]
-for sample_folder in sample_folders[1::] :
+
+print(sample_folders)
+
+for sample_folder in tqdm(sample_folders) :
+    b2c.bin2cell.load_image = patched_load_image
+
     IMMUNEXID = sample_folder.name.split("_")[-1]
     
     print_log(f"Starting processing for {IMMUNEXID}")
@@ -119,7 +130,7 @@ for sample_folder in sample_folders[1::] :
         print_log(f"Skipping {IMMUNEXID}: No matching HE image found", type="warning")
         continue
 
-    try:
+    if 1:
         step_time = time.time()
         path = sample_folder / "outs/binned_outputs/square_002um/"
         source_image_path = base_he_image_path / f"{IMMUNEXID}{nanozoomer_tif[IMMUNEXID]}.tif"
@@ -133,17 +144,32 @@ for sample_folder in sample_folders[1::] :
         gex_img_out = stardist_dir / "gex.tiff"
         gex_seg_out = stardist_dir / "gex.npz"
 
-        adata = b2c.read_visium(path, source_image_path=source_image_path)
+        
+        try:
+            importlib.reload(b2c.bin2cell) 
+            adata = b2c.read_visium(path, source_image_path=source_image_path)
+        except:
+            b2c.bin2cell.load_image = patched_load_image
+            adata = b2c.read_visium(path, source_image_path=source_image_path)
+        
         adata.var_names_make_unique()
         sc.pp.filter_genes(adata, min_cells=gene_filter_min_cells)
         sc.pp.filter_cells(adata, min_counts=cell_filter_min_counts)
-
         
         print_log(f"Loaded data for {IMMUNEXID} in {time.time() - step_time:.2f}s")
         step_time = time.time()
 
         b2c.destripe(adata)
-        b2c.scaled_he_image(adata, mpp=mpp, save_path=he_img_out)
+        print('destriped')
+
+        
+        try:
+            importlib.reload(b2c.bin2cell) 
+            b2c.scaled_he_image(adata, mpp=mpp, save_path=he_img_out)
+        except:
+            b2c.bin2cell.load_image = patched_load_image
+            b2c.scaled_he_image(adata, mpp=mpp, save_path=he_img_out)
+            
 
         
         print_log(f"Destriping and scaled image completed in {time.time() - step_time:.2f}s")
@@ -176,7 +202,6 @@ for sample_folder in sample_folders[1::] :
 
         b2c.expand_labels(adata, labels_key="labels_he", expanded_labels_key="labels_he_expanded")
 
-        
         print_log(f"Label expansion completed in {time.time() - step_time:.2f}s")
         step_time = time.time()
 
@@ -202,13 +227,17 @@ for sample_folder in sample_folders[1::] :
 
 
 
+         # Generate GEX grid image and export
         import importlib
-        importlib.reload(b2c.bin2cell) # reseting defeault image loading for the gex data
-        img = b2c.grid_image(adata, "n_counts_adjusted", mpp=mpp, sigma=grid_image_sigma)
+        importlib.reload(b2c.bin2cell) # using default
+        img = b2c.grid_image(adata, "n_counts_adjusted", mpp=mpp, sigma=grid_image_sigma) 
         cv2.imwrite(str(gex_img_out), img)
 
-
+        print(" 🚀 GEx generated and exported to ", gex_img_out)
+        
         b2c.stardist(str(gex_img_out), str(gex_seg_out), **stardist_gex_params)
+
+        print(f" GEx segmented 🔎 ")
         b2c.insert_labels(adata, str(gex_seg_out), basis="array", mpp=mpp, labels_key="labels_gex")
         print_log(f"GEX segmentation completed in {time.time() - step_time:.2f}s")
         step_time = time.time()
@@ -253,6 +282,7 @@ for sample_folder in sample_folders[1::] :
         
         print_log(f"SUCCESS: {IMMUNEXID} processed in {elapsed:.2f}s")
 
-
-    except Exception as e:
-        print_log(f"XXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX FAILURE: {IMMUNEXID} failed with error: {str(e)} XXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX ", type='error')
+    else:
+        pass
+    # except Exception as e:
+    #     print_log(f"XXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX FAILURE: {IMMUNEXID} failed with error: {str(e)} XXXXXXXXXXXXXXXX\nXXXXXXXXXXXXXXXX ", type='error')
