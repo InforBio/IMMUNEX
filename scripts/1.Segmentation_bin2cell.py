@@ -17,7 +17,8 @@ import importlib
 # -------------------------------
 
 # Input paths
-base_sample_path = Path("/home/mounim/rawdata/IMMUNEX/OUTPUT")
+base_sample_path = Path("/home/mounim/rawdata/IMMUNEX/tools")
+# base_sample_path = Path("/home/mounim/rawdata/IMMUNEX/OUTPUT")
 base_he_image_path = Path("/home/mounim/rawdata/IMMUNEX/PJ2410310_250214/IMAGE/HE_nanozoomer_tif")
 
 # Output path
@@ -111,9 +112,26 @@ for file in tqdm(base_he_image_path.glob("*.tif")) :
 
 sample_folders = sorted(base_sample_path.glob("Visium_NSCLC_*"))
 
+print(sample_folders)
+
 sample_to_skip = [
     'IMMUNEX001',
     'IMMUNEX002',
+    'IMMUNEX003',
+    'IMMUNEX004',
+    'IMMUNEX005',
+    'IMMUNEX006',
+    'IMMUNEX007',
+    'IMMUNEX008',
+    'IMMUNEX009',
+    'IMMUNEX010',
+    'IMMUNEX011',
+    'IMMUNEX012',
+    'IMMUNEX013',
+    'IMMUNEX014',
+    'IMMUNEX015',
+    'IMMUNEX017',
+    'IMMUNEX018',
 ]
 
 print(sample_folders)
