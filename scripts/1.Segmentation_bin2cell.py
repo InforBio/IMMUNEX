@@ -22,7 +22,7 @@ base_sample_path = Path("/home/mounim/rawdata/IMMUNEX/tools")
 base_he_image_path = Path("/home/mounim/rawdata/IMMUNEX/PJ2410310_250214/IMAGE/HE_nanozoomer_tif")
 
 # Output path
-base_output_dir = Path("segmentation/bin2cell/bin2cell_output")
+base_output_dir = Path("segmentation/bin2cell/bin2cell_output_he0005_gex005")
 os.makedirs(base_output_dir, exist_ok=True)
 
 # Microns per pixel
@@ -43,13 +43,13 @@ stardist_he_params = {
     "block_size": 4096,
     "min_overlap": 128,
     "context": 128,
-    "prob_thresh": 0.005
+    "prob_thresh": 0.0005
 }
 
 # StarDist settings for GEX
 stardist_gex_params = {
     "stardist_model": "2D_versatile_fluo",
-    "prob_thresh": 0.1,
+    "prob_thresh": 0.05,
     "nms_thresh": 0.1,
     "block_size": 4096,
     "min_overlap": 250,
@@ -130,8 +130,8 @@ sample_to_skip = [
     'IMMUNEX013',
     'IMMUNEX014',
     'IMMUNEX015',
-    'IMMUNEX017',
-    'IMMUNEX018',
+    # 'IMMUNEX017',
+    # 'IMMUNEX018',
 ]
 
 print(sample_folders)
