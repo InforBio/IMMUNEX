@@ -12,9 +12,10 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
 
+from datetime import datetime
 
 # Directory containing the h5ad files
-data_dir = "../segmentation/bin2cell/bin2cell_output_he0005_gex005"
+data_dir = "/scratch/Projects/IMMUNEX/segmentation/bin2cell/bin2cell_output_he0.01_gex0.05"
 
 
 # Collect all subdirectories (one per sample) that contain h5ad files
@@ -34,6 +35,9 @@ for sample_id, path in tqdm(h5ad_paths, desc="Loading samples"):
         print(f'skipping {sample_id}')
         continue
     else:
+                
+        print(" =============== ", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        
         adata = sc.read(path)
         adata.raw = adata
         adata.uns['sample_id'] = sample_id
@@ -50,11 +54,12 @@ for sample_id, path in tqdm(h5ad_paths, desc="Loading samples"):
         print(adata.obs.sample()) # Display the first few rows of the observation data (cell metadata)
 
 
+        print(" =============== ", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
         #### Assess the seg.
         
         # Define a base output directory
-        output_base_dir = "../results/intermediate/segmented_adatas/"
+        output_base_dir = "/scratch/Projects/IMMUNEX/results/intermediate/segmented_adatas/"
         sample_output_dir = os.path.join(output_base_dir, sample_id)
         os.makedirs(sample_output_dir, exist_ok=True)
         
@@ -93,6 +98,7 @@ for sample_id, path in tqdm(h5ad_paths, desc="Loading samples"):
             "GEx only": "#8da0cb",
             "Unassigned": "#dddddd"
         }
+        print(" =============== ", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         
         # Plot
         fig, ax = plt.subplots(figsize=(10, 2))
@@ -120,6 +126,7 @@ for sample_id, path in tqdm(h5ad_paths, desc="Loading samples"):
         plt.show()
 
         
+        print(" =============== ", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
         # Count bins per segmentation (excluding label 0 as background)
         label_col = 'labels_joint'
@@ -142,6 +149,7 @@ for sample_id, path in tqdm(h5ad_paths, desc="Loading samples"):
         # Optional: show the plot
         plt.show()
 
+        print(" =============== ", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         
         # Count bins per segmentation (excluding label 0 as background)
         label_col = 'labels_he_expanded'
@@ -163,6 +171,7 @@ for sample_id, path in tqdm(h5ad_paths, desc="Loading samples"):
         # Optional: show the plot
         plt.show()
 
+        print(" =============== ", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
         # Filtering logic
         threshold = np.percentile(cell_bin_counts.values, 99)
@@ -182,13 +191,94 @@ for sample_id, path in tqdm(h5ad_paths, desc="Loading samples"):
         output_path = os.path.join(sample_output_dir, f"{sample_id}_cell dist After Filtering.png")
         fig = plt.gcf()  # Get the current figure
         fig.savefig(output_path, dpi=300)
-        # Optional: show the plot
-        plt.show()
+        # plt.show()
+        print(" =============== ", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
         # Filtering data
         mask = adata.obs['labels_joint'].isin(filtered_counts.index)
         adata_filtered = adata[mask].copy()
 
+
+        print('ploting nuclei')
+        # Parameters
+        crop_axis_fraction = 0.02  # Fraction of the tissue area to crop around the center
+        
+        # Get spatial coordinates
+        spatial_coords = adata_filtered.obsm['spatial'].copy()
+        
+        # Compute tissue bounds and center
+        x_min, x_max = spatial_coords[:, 0].min(), spatial_coords[:, 0].max()
+        y_min, y_max = spatial_coords[:, 1].min(), spatial_coords[:, 1].max()
+        center_x = (x_min + x_max) / 2
+        center_y = (y_min + y_max) / 2
+        
+        # Define crop bounds
+        dx = (x_max - x_min) * crop_axis_fraction / 2
+        dy = (y_max - y_min) * crop_axis_fraction / 2
+        x0, x1 = center_x - dx, center_x + dx
+        y0, y1 = center_y - dy, center_y + dy
+        
+        # Subset AnnData to cropped region
+        within_crop = (
+            (spatial_coords[:, 0] >= x0) & (spatial_coords[:, 0] <= x1) &
+            (spatial_coords[:, 1] >= y0) & (spatial_coords[:, 1] <= y1)
+        )
+        adata_cropped_bins = adata_filtered[within_crop, :].copy()
+        
+        # Keep only nuclei
+        mask = adata_cropped_bins.obs['labels_he'] != 0
+        adata_cropped_bins = adata_cropped_bins[mask].copy()
+        
+        # # ---- Plot 1: full image with crop box ----
+        # fig, ax = plt.subplots(figsize=(6, 6))
+        # sc.pl.spatial(
+        #     adata_filtered,
+        #     ax=ax,
+        #     color=None,
+        #     show=False,
+        #     alpha_img=0.8,
+        #     size=1
+        # )
+        # # Add rectangle showing crop area
+        # rect = Rectangle(
+        #     (x0, y0),
+        #     x1 - x0,
+        #     y1 - y0,
+        #     linewidth=2,
+        #     edgecolor='red',
+        #     facecolor='none'
+        # )
+        # ax.add_patch(rect)
+        # ax.set_title("Full image with crop area")
+        # plt.tight_layout()
+
+        # plt.tight_layout()
+        # output_path = os.path.join(sample_output_dir, f"{sample_id}_crop pos.png")
+        # fig = plt.gcf()  # Get the current figure
+        # fig.savefig(output_path, dpi=300)
+        
+        # print('Crop position ploted')
+        
+        print('Ploting nuclei #1')
+        # ---- Plot 2: cropped region with nuclei labels ----
+        sc.pl.spatial(
+            adata_cropped_bins,
+            color=['labels_he'],
+            size=1,
+            cmap='nipy_spectral',
+            alpha_img=0.9,
+            show=False,
+            title="Zoom on Nuclei (HE)"
+        )
+        plt.tight_layout()
+        output_path = os.path.join(sample_output_dir, f"{sample_id} nuclei preview.png")
+        fig = plt.gcf()  # Get the current figure
+        fig.savefig(output_path, dpi=300)
+
+
+        
+
+        
         # Aggregation of bins
         adata_filtered.obs['cell_id'] = adata_filtered.obs['labels_joint'].astype(str)
         adata_cells = adata_filtered[adata_filtered.obs['labels_joint'] > 0].copy()
@@ -198,6 +288,7 @@ for sample_id, path in tqdm(h5ad_paths, desc="Loading samples"):
         X = adata_cells.X.tocsr()
         cell_ids = adata_cells.obs['cell_id'].values
         print('Use CSR for efficient row slicing')
+        print(" =============== ", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         
         # Map cell_id to integer index
         unique_ids, inverse_idx = np.unique(cell_ids, return_inverse=True)
@@ -213,6 +304,7 @@ for sample_id, path in tqdm(h5ad_paths, desc="Loading samples"):
         # Efficient sparse row-by-row summing
         for i in tqdm(range(X.shape[0])):
             result[inverse_idx[i]] += X[i].toarray()[0]
+        print(" =============== ", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         
         # Convert to DataFrame
         grouped_expr = pd.DataFrame(result, index=unique_ids, columns=adata_cells.var_names)
@@ -223,6 +315,7 @@ for sample_id, path in tqdm(h5ad_paths, desc="Loading samples"):
         adata_cells.var_names = grouped_expr.columns # Gene Names
         print('Aggregation done')
         
+        print(" =============== ", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         
         # and 'cell_id' is the grouping key used to generate grouped_expr
         # 1. Get a mapping from cell_id → average spatial position
@@ -245,7 +338,37 @@ for sample_id, path in tqdm(h5ad_paths, desc="Loading samples"):
             library_id: adata_filtered.uns['spatial'][library_id]
         }
 
-        crop_axis_fraction = 0.05  # how much to crop around the center
+        print(" =============== ", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+        # Step 1: Copy gene metadata (var) for the grouped expression matrix
+        adata_cells.var = adata_filtered.var.loc[grouped_expr.columns].copy()
+        adata_cells.var_names_make_unique()
+        
+        # Step 2: Aggregate metadata per reconstructed cell
+        meta = adata_filtered.obs.groupby('cell_id').agg({
+            'n_counts': 'sum',
+        })
+        # - Number of bins per cell (count of occurrences)
+        meta['n_bins'] = adata_filtered.obs['cell_id'].value_counts()
+        meta.index.name = 'cell_id'
+        
+        # Step 3: Reorder metadata to match cell ordering in grouped_expr
+        meta = meta.loc[grouped_expr.index]
+        
+        # Step 4: Assign aggregated metadata as the new obs for reconstructed cells
+        adata_cells.obs = meta
+        
+        # Step 5: Copy over select entries from uns
+        for k in ['sample_id', 'sample_metadata', 'bin2cell']:
+            if k in adata.uns:
+                adata_cells.uns[k] = adata.uns[k]
+        
+        # Step 6: Copy full spatial metadata
+        adata_cells.uns['spatial'] = adata.uns['spatial']
+        
+        print(" =============== ", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+        crop_axis_fraction = 0.01  # how much to crop around the center
         
         print('Cropped vizualisation',crop_axis_fraction,' ratio' )
         # Get spatial coordinates
@@ -269,11 +392,18 @@ for sample_id, path in tqdm(h5ad_paths, desc="Loading samples"):
             (spatial_coords[:, 1] >= y0) & (spatial_coords[:, 1] <= y1)
         )
         adata_cropped = adata_cells[within_crop, :].copy()
+        print(" =============== ", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         
         # Normalize n_bins to define spot sizes (you can adjust scaling)
         sizes = adata_cropped.obs['n_bins']
         sizes_normalized = 10 * (sizes / sizes.max())  # scale to 0–20
+
+        save = f"{sample_id}_cropped_viz_size_and_counts.png"
         
+        output_dir = os.path.join("figures", "segmentation", sample_id)
+        os.makedirs(output_dir, exist_ok=True)
+        os.chdir(output_dir)  # <- temporarily switch to save location
+
         # Plot
         sc.pl.spatial(
             adata_cropped,
@@ -282,8 +412,9 @@ for sample_id, path in tqdm(h5ad_paths, desc="Loading samples"):
             cmap='Spectral_r',
             alpha_img=0.6,
             show=False,
-            save = os.path.join(sample_output_dir, f"{sample_id}_cropped_viz_size and counts.png")
+            save=f"{sample_id}_cropped_viz_size_and_counts.png"
         )
+        print(" =============== ", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
         #Visualize the UMI (total counts)
         #distribution per cell and the expression distributions of specific marker genes
@@ -307,6 +438,7 @@ for sample_id, path in tqdm(h5ad_paths, desc="Loading samples"):
 
         
 
+        print(" =============== ", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         
         # Boolean masks from adata
         is_he = adata_filtered.obs['labels_he'] != 0
@@ -343,6 +475,7 @@ for sample_id, path in tqdm(h5ad_paths, desc="Loading samples"):
             "GEx only": "#8da0cb",
             "Unassigned": "#dddddd"
         }
+        print(" =============== ", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         
         # Plot
         fig, ax = plt.subplots(figsize=(10, 2))
@@ -370,6 +503,7 @@ for sample_id, path in tqdm(h5ad_paths, desc="Loading samples"):
         
         sizes = adata_cells.obs['n_bins']
         sizes_normalized = 10 * (sizes / sizes.max())  # scale to 0–20
+        print(" =============== ", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         
         # Plot
         sc.pl.spatial(
@@ -379,10 +513,11 @@ for sample_id, path in tqdm(h5ad_paths, desc="Loading samples"):
             cmap='Spectral_r',
             alpha_img=0.6,
             show=False,
-            save = os.path.join(sample_output_dir, f"{sample_id} full image projection.png")
+            save=f"{sample_id}_ full image projection.png"
         )
         
         file_path = os.path.join(sample_output_dir, f"adata_{sample_id}_cells.h5ad")
         adata_cells.write(file_path)
+        print(" =============== ", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
 
