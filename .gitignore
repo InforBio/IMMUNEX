@@ -37,6 +37,7 @@ results/figures/
 *.tar
 *.h5ad
 *.loom
+*.pkl
 
 # Segmentations and masks
 *.tif
