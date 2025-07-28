@@ -63,3 +63,7 @@ outs/
 enact_cache/*/chunks/*
 enact_cache/*/chunks
 *enact_cache*
+scripts/2025-Q2/segmentation/**/*.geojson
+scripts/2025-Q2/segmentation/bin2cell_outputs/**/*.npz
+*.npz
+*.geojson
