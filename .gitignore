@@ -67,3 +67,5 @@ scripts/2025-Q2/segmentation/**/*.geojson
 scripts/2025-Q2/segmentation/bin2cell_outputs/**/*.npz
 *.npz
 *.geojson
+scripts/2025-Q2/segmentation/**/*.geojson
+scripts/2025-Q2/segmentation/**/*.npz
