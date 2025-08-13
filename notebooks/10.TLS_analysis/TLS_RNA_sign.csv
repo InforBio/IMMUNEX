@@ -1,0 +1,55 @@
+﻿First_author;Last_author;Journal;Publication_year;Gene_number;List up;Technology;Cancer;Comments;Title;Doi
+R Cabrita;G Jönsson;Nature;2020;9;CD79B, CD1D, CCR6, LAT, SKAP1, CETP, EIFA1Y, RBP5, PTGDS;SAM analysis and scRNA-seq;Melanoma; identify genes overexpressed in CD8+CD20+ versus CD8+ groups and subtracted the genes overexpressed in CD8+ versus double-negative groups.Two groups, which were independent of tumour core and patient, were clearly discerned on the basis of Ki67 expression.;"Tertiary lymphoid structures improve immunotherapy and survival in melanoma
+";https://doi.org/10.1038/s41586-019-1914-8
+L de Chaisemartin;M-C Dieu-Nosjean;Cancer Research;2011;13;CCL19, CCL21, CXCL13, CCL17, CCL22, IL16, ICAM2, ICAM3, VCAM1, MADCAM1, ITGAL, ITGA4, ITGAD;Laser microdissection and qPCR;Lung;T cell presence in TLS;Characterization of Chemokines and Adhesion Molecules Associated with T cell Presence in Tertiary Lymphoid Structures in Human Lung Cance;10.1158/0008-5472.CAN-11-0952
+D Coppola;J J Mulé;The American Journal of Pathology;2011;12;CCL2, CCL3, CCL4, CCL5, CCL8, CCL18, CCL19, CCL21, CXCL9, CXCL10, CXCL11, CXCL13;mRNAMicroarray;Colorectal;"12-chemokine gene signature ; Metagene analysis with gene chip technology ; Chemokines are up-regulated in tumors with ectopic lymph node structures.";"Unique Ectopic Lymph Node-Like Structures Present in Human Primary Colorectal Carcinoma Are Identified by Immune Gene Array Profiling
+";10.1016/j.ajpath.2011.03.007
+G Bindea;J Galon;Immunity;2013;1;CXCL13;DNA microarray;Colorectal;only 1 gene;"Spatiotemporal Dynamics of Intratumoral Immune Cells Reveal the Immune Landscape in Human Cancer
+";http://dx.doi.org/10.1016/j.immuni.2013.10.003
+M Meylan;W H Fridman;Immunity;2022;29;IGHA1, IGHG1, IGHG2, IGHG3, IGHG4, IGHGP, IGHM, IGKC, IGLC1, IGLC2, IGLC3, JCHAIN, CD79A, FCRL5, MZB1, SSR4, XBP1, TRBC2, IL7R, CXCL12, LUM, C1QA, C7, CD52, APOE, PTLP, PTGDS, PIM2, DERL3;Visium Spatial transcriptomics;Renal;TLS imprint;"Tertiary lymphoid structures generate and propagate anti-tumor antibody-producing plasma cells in renal cell cancer
+";https://doi.org/10.1016/j.immuni.2022.02.001
+I P.MacFawn;T C Bruno;Cancer Cell;2024;20;ARHGDIB, BIRC3, CD52, CD79A, CORO1A, CXCL9, CYTIP, LCP1, LIMD2, LSP1, LTB, PLEK, POU2AF1, PTPRC, PTPRCAP, RCSD1, SELL, TAGAP, WIPF1, TRBC1;DSP;Ovarian;"By setting a threshold of 2-fold enrichment in the “TLS” enriched DEGs, we produced a 20-gene “TLS-DSP” signature
+";;https://doi.org/10.1016/j.ccell.2024.09.007
+X Wang;C Sotirou;Nature Communications;2024;30;CD79A, CD79B, TNFRSF13C, BLK, CD22, CD37, MS4A1, NIBAN3, CD19, IKZF3, LINC00926, CXCR5, LTB, SELL, CCL19, POU2AF1, CXCL13, FCRLA, VPREB3, FCMR, AL928768.3, RASGRP2, TCF7, RIPOR2, RAC2, IL16, CCR7, CD52, TCL1A, ATP2A3;"ST Arrays
+";Breast; comparing gene expression data from TLS versus lymphocyte compartment as well as TLS versus other non-immune-related compartments;"Spatial transcriptomics reveals substantial heterogeneity in triple-negative breast cancer with potential clinical implications
+";https://doi.org/10.1038/s41467-024-54145-w
+R Wu;L Chen;Science Advances;2021;50;FDCSP, CR2, CXCL13, LTF, CD52, MS4A1, CCL19, LINC00926, LTB, CORO1A, CD79B, TXNIP, CD19, LIMD2, CD37, ARHGAP45, BLK, TMC8, CCL21, PTPN6, ATP2A3, IGHM, SPIB, TMSB4X, CXCR4, NCF1, CD79A, ARHGAP9, DEF6, EVL, TBC1D10C, RASAL3, INPP5D, RNASET2, RASGRP2, TNFRSF13C, RAC2, CD22, ARHGEF1, AC103591.3, TRAF3IP3, HLA-DQB1, CD53, ARHGAP4, TRBC2, POU2AF1, TRAF5, OGA, FCRL3, HLA-DQA1;Visium Spatial transcriptomics;Liver;;"Comprehensive analysis of spatial architecture in primary liver cancer
+";10.1126/sciadv.abg3750
+Y Zhang;D chen;Science Advances;2024;83;RPS15A, LTB, RPS11, CCL5, LSP1, CD3D, AKNA, CCL19, TRBC1, RPL18A, CD44, HLA-DPB1, CYBA, 1-Sep, RPS27, TRAC, HLA-DRB1, TBC1D10C, ZAP70, ZFP36L2, HLA-DQA1, CD52, RPL21, JAK3, CD37, SRGN, RASAL3, CD79A, RPS6, CXCR4, LIMD2, ATP2A3, CD79B, RACK1, TSC22D3, RPL13, ARHGAP45, LAPTM5, ACAP1, ARHGAP4, GMFG, LDHB, TRBC2, RPS3, IGFBP7, CD74, HLA-DRA, CIRBP, COL6A2, RPS3A, CCL21, EVL, CD2, RAC2, NOP53, LAT, CORO1A, HLA-E, IL7R, TXNIP, HCST, FXYD5, RASGRP2, RPL34, ARHGDIB, ARHGEF1, HLA-DQB1, ITGB2, DEF6, EMILIN1, RPS9, VWF, LUM, IGHM, KLF2, GSTP1, HSPG2, HLA-DMA, AEBP1, CCDC85B, VSIR, MFAP4, INMT;;;83 gene signature;"SpaTopic: A statistical learning framework for exploring tumor spatial architecture from spatially resolved transcriptomic data
+";10.1126/sciadv.adp4942
+Y Zhang;D chen;Science Advances;2024;25;CCL19, CD52, TRBC2, CORO1A, LTB, CXCR4, ARHGAP45, CCL21, LIMD2, EVL, ARHGEF1, TBC1D10C, CD37, ATP2A3, TXNIP, HLA-DQB1, CD79B, ARHGAP4, RAC2, RASAL3, DEF6, HLA-DQA1, CD79A, RASGRP2, IGHM;;;25 common ith the 50 gene of the liver;"SpaTopic: A statistical learning framework for exploring tumor spatial architecture from spatially resolved transcriptomic data
+";10.1126/sciadv.adp4942
+W Wu;C Zhang;Heliyon;2024;5;PTGDS, ST6GALNAC1, XIST, RBP5, SKAP1;TCGA database;All;Machine learning;"The tertiary lymphoid structure-related signature identified PTGDS in regulating PD-L1 and promoting the proliferation and migration of glioblastoma
+";10.1016/j.heliyon.2023.e23915
+J Yang;Y Wang;Genes & Diseases;2025;8;CCL5, CCL8, CCL18, CCL19, CXCL11, CXCL13, CD38, STAT5A;TCGA database;Ovarian;"Machine learning ; risk score = (0.0797) ∗ CCL5 + (0.0653) ∗ CCL8 + (−0.0135) ∗ CCL18 + (−0.0164) ∗ CCL19 + (−0.0827) ∗ CXCL11 + (−0.067) ∗ CXCL13 + (−0.2192) ∗ CD38 + (0.2311) ∗ STAT5A";"Identification of a tertiary lymphoid structure (TLS)-related signature for ovarian cancer prognosis suggests a potential role of STAT5A in TLS maturation
+";https://doi.org/10.1016/j.gendis.2025.101514
+B Han;R Fan;Immunologic Research;2025;4;SGPP2, MS4A1, IL1R2, CCL20;TCGA database and 3 GEO dataset;Lung_adenocarcinoma;Machine learning;"Tertiary lymphoid structure signatures are associated with survival and immunotherapy response in lung adenocarcinoma
+";https://doi.org/10.1007/s12026-025-09595-9
+Y Hou;H Mao;Front. Genet.;2023;9;CETP, CCR7, SELL, LAMP3, CCL19, CXCL9, CXCL10, CXCL11, CXCL13;TCGA dataset and validated in the GSE140082 dataset;Ovarian;univariate regression analysis;"The gene signature of tertiary lymphoid structures within ovarian cancer predicts the prognosis and immunotherapy benefit
+";https://doi.org/10.3389/fgene.2022.1090640
+L Pu;C Zhang;International Immunopharmacology;2025;3;HM13, CSTB, CDCA7L;TCGA dataset and validated in the GSE140082 dataset;Liver;Machine learning Mendelian randomization. To obtain significantly differentially expressed TLSGs, we first obtained6777 TLSGs from the Genecards database. Then limma package.;"Genetic association of tertiary lymphoid structure-related gene signatures with HCC based on Mendelian randomization and machine learning and construction of prognosis model
+";https://doi.org/10.1016/j.intimp.2024.113594
+X Liu;G Dong;Biomedicines;2024;6;TIGIT, ICOS, FBLN7, CCL8, PDCD1, CCL2;TCGA dataset;Colorectal;Machine learning These genes are PDCD1, CCL2, and ICOS. The RiskScore calculation follows this formula: RisksScore = (0.297 × PDCD1 exp) + (0.26 × CCL2 exp) + (-0.537 × ICOS exp).;"Multi-Algorithm-Integrated Tertiary Lymphoid Structure Gene Signature for Immune Landscape Characterization and Prognosis in Colorectal Cancer Patients
+";https://doi.org/10.3390/biomedicines12112644
+Z Xu;W Wang;Front. Oncology;2024;14;IGHG1, MMP1, NOTUM, CXCL5, CCL21, CCL19, MRC1, VSIG4, PRRX1, CD8A, SELL, FHL1, CAVIN2, NEXN;TCGA dataset, HMDB and miRWalk databases;Colorectal;Machine learning ;"Exploiting tertiary lymphoid structures gene signature to evaluate tumor microenvironment infiltration and immunotherapy response in colorectal cancer
+";https://doi.org/10.3389/fonc.2024.1383096
+J-X Lei;F Gao;Int J Surg;2024;9;TNS1, SFRP2, GAS1, DPT, CXCL11, UBD, IGLV3-19, MMP1, IGHG2;TCGA dataset and GEO;Colorectal;"MAchine learning ; The TLSscore formula is as follows: (0.1272 * TNS1) + (0.0507 * SFRP2) + (−0.0176 * DPT) + (0.0075 * GAS1) + (−0.0731 * CXCL11) + (−0.0219 * UBD) + (−0.0345 * IGLV3-19) + (−0.0721 * MMP1) + (−0.0127 * IGHG2).";Deciphering tertiary lymphoid structure heterogeneity reveals prognostic signature and therapeutic potentials for colorectal cancer: a multicenter retrospective cohort study;10.3389/fonc.2024.1383096
+Z Gong;W Wang;Transl Cancer Res.;2024;7;CCL19, CCL21, CXCL13, CCR7, CXCR5, SELL, LAMP3;TCGA dataset with HE slide and other dataset including single cell;Lung;The other signature genes derived from reported literature were as follows: TLS (CCL19, CCL21, CXCL13, CCR7, CXCR5, SELL, and LAMP3);;10.21037/tcr-24-1746
+Y Liu;R Peng Liang;World J Oncol;2024;6;CETP, DNASE1L3, PLAC8, SKAP1, C7, VNN2;TCGA dataset;Liver;"Machine learning; TLS score = Expression (CETP) × 0.068656 + Expression (DNASE1L3) × (-0.264498) + Expression (PLAC8) × 0.149993 + Expression (SKAP1) × (-0.137136) + Expression(C7) × (-0.026918) + Expression(VNN2) × 0.094023";"Identification and Validation of a Novel Tertiary Lymphoid Structures-Related Prognostic Gene Signature in Hepatocellular Carcinoma
+";38993245
+M Jiao;R Liu;J Clin Invest.;2025;18;CXCR5, CCR7, CD79B, CCL18, CCL21, CXCR4, CCL5, CXCL9, CXCL10, CCL19, CXCL13, SELL, CD86, LTB, CD40, LAMP3, BCL6, CCL2;TCGA dataset;Lung;We constructed a signature from a compendium of TLS signature genes;"ACAT1 regulates tertiary lymphoid structures and correlates with immunotherapy response in non–small cell lung cancer
+";10.1172/JCI191094
+Y Hua;Y Gao;Journal of Bio-X Research;2025;8;CXCL13, SDC1, SGPP2, TIGIT, CXCL9, IL2RA, CD200, CCL21;TCGA dataset;Gastric;Regression on OS;"Construction of a Tertiary Lymphoid Structure Gene Signature in Gastric Cancer and Its Predictive Value for the Tumor Microenvironment and Immunotherapy
+";10.34133/jbioxresearch.0036
+;;;;;;;;;;
+;;;;;;;;;;
+;;;;;;;;;;
+;;;;;;;;;;
+;;;;;;;;;;
+;;;;;;;;;;
+;;;;;;;;;;
+;;;;;;;;;;
+;;;;;;;;;;
+;;;;;;;;;;
+;;;;;;;;;;
+;;;;;;;;;;
