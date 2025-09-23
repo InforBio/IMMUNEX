@@ -1,0 +1,93 @@
+category,gene
+Tumor cells,KRT18
+Tumor cells,IRX2
+Tumor cells,NAPSA
+Tumor cells,SPINK13
+Tumor cells,KRT7
+Tumor cells,CAPN8
+Tumor cells,GPRC5A
+Tumor cells 2,TP63
+Tumor cells 2,CALML3
+Tumor cells 2,KRT5
+Tumor cells 2,PKP1
+Tumor cells 2,TESC
+Tumor cells 2,SPINK1
+Tumor cells 2,C9orf152
+Tumor cells 2,KRT7
+T cells,CD3D
+T cells,CD3E
+T cells,CD8A
+T cells,CD8B
+Plasma cells,JCHAIN
+Plasma cells,IGHG1
+Plasma cells,IGHA1
+B cells,AKNA
+B cells,ARHGAP25
+B cells,CCL21
+B cells,CD180
+B cells,CD2
+B cells,CD27
+B cells,CD37
+B cells,CD38
+B cells,CLEC17A
+B cells,CLEC9A
+B cells,CLECL1
+B cells,GIMAP4
+B cells,MAP4K1
+B cells,PAX5
+B cells,TNFRSF17
+B cells,TRAF3IP3
+Meyloid cells,FCGR3A
+Meyloid cells,CD68
+Meyloid cells,MSR1
+Meyloid cells,APOE
+Meyloid cells,C1QA
+Meyloid cells,XCR1
+Meyloid cells,CLEC9A
+Meyloid cells,CD1C
+Meyloid cells,CLEC10A
+Meyloid cells,FCER1A
+Meyloid cells,LILRA4
+Meyloid cells,SPIB
+Meyloid cells,IRF7
+Meyloid cells,KIT
+Meyloid cells,CPA3
+Endothelial cells,PECAM1
+Endothelial cells,CDH5
+Endothelial cells,VWF
+Fibroblast,ACTA2
+Fibroblast,MYH11
+Fibroblast,VIM
+Fibroblast,COL14A1
+Fibroblast,COL13A1
+Fibroblast,PDGFRA
+Fibroblast,PDGFRB
+Smooth muscle cells,CNN1
+Smooth muscle cells,SYNPO2
+Smooth muscle cells,CRYAB
+Smooth muscle cells,DES
+Neutrophils,ABTB1
+Neutrophils,AMPD2
+Neutrophils,CAMP
+Neutrophils,FPR1
+Neutrophils,FPR2
+Neutrophils,MAEA
+Neutrophils,PROK2
+Neutrophils,SEC14L1
+Neutrophils,SLC25A37
+Neutrophils,TNFSF14
+Neutrophils,TREML4
+Neutrophils,VNN2
+Neutrophils,XPO6
+Tregs,FOXP3
+Tregs,BATF
+Tregs,IKZF2
+Tregs,CTLA4
+Tregs,IL2RA
+Tregs,CCR8
+Tregs,CCR10
+Tregs,IL32
+Tregs,IKZF4
+Tregs,TNFRSF18
+Tregs,IL10RA
+Tregs,TIGIT

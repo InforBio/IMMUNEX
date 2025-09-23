@@ -1,0 +1,25 @@
+category,gene
+Tumor cells,KRT18
+Tumor cells,NAPSA
+Tumor cells,KRT7
+Tumor cells,CAPN8
+Tumor cells,GPRC5A
+Tumor cells 2,KRT7
+Plasma cells,JCHAIN
+Plasma cells,IGHG1
+Plasma cells,IGHA1
+B cells,AKNA
+B cells,CD37
+Dendritic cells,S100A10
+Dendritic cells,S100A6
+Dendritic cells,S100A16
+Meyloid cells,CD68
+Meyloid cells,APOE
+Meyloid cells,C1QA
+Endothelial cells,PECAM1
+Endothelial cells,VWF
+Fibroblast,ACTA2
+Fibroblast,VIM
+Fibroblast,COL14A1
+Neutrophils,SEC14L1
+Neutrophils,SLC25A37
