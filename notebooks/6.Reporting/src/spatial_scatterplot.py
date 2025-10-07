@@ -1,4 +1,3 @@
-%%writefile viz_cluster_ui.py
 import pandas as pd, numpy as np, matplotlib.pyplot as plt, matplotlib as mpl, ipywidgets as W
 from ipywidgets import Layout
 from IPython.display import display as _d
