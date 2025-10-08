@@ -1,288 +1,202 @@
-# -*- coding: utf-8 -*-
-from pathlib import Path
-import pandas as pd, numpy as np
-import matplotlib as mpl, matplotlib.pyplot as plt
-import ipywidgets as W
+# ---------- Basic sanity ----------
+needed = {"array_row","array_col"}
+missing = needed - set(df.columns)
+if missing:
+    raise KeyError(f"Missing columns: {missing}")
+
+# ---------- Columns ----------
+res_cols = [c for c in df.columns if c.startswith("resolution_leiden_")]
+if not res_cols:
+    raise ValueError("No 'resolution_leiden_*' columns found.")
+qc_cols = [c for c in [
+    "n_genes_by_counts","total_counts","log1p_total_counts",
+    "pct_counts_mt","counts_per_bin","genes_per_bin"
+] if c in df.columns]
+
+# add pct_in_cluster if present (so you can color by it)
+extra_cols = []
+if "pct_in_cluster" in df.columns:
+    extra_cols.append("pct_in_cluster")
+
+color_options = res_cols + qc_cols + extra_cols
+
+# choose default resolution = resolution_leiden_0.5 if available
+default_res = next((c for c in res_cols if c == "resolution_leiden_0.5"), res_cols[0])
+
+# ---------- Palettes ----------
+import matplotlib as mpl, numpy as np, matplotlib.pyplot as plt, ipywidgets as W
 from ipywidgets import Layout
-from IPython.display import display, HTML
+cmaps_cat = ['tab10','tab20','Set1','Set2','Set3','Pastel1','Pastel2','Dark2','Accent','Paired','tab20b','tab20c']
+cmaps_cont = ['viridis','plasma','inferno','magma','cividis','Spectral','coolwarm','bwr','seismic','RdBu_r','PiYG','PRGn','BrBG','rainbow','nipy_spectral','Greys','Blues','Greens','Oranges','Reds']
+cmap_all = cmaps_cat + cmaps_cont
 
-# --------- Locate BASE_DIR from the notebook (fallback = CWD) ---------
-BASE_DIR = globals().get("BASE_DIR", Path.cwd())
+# ---------- Widgets ----------
+# default color-by: prefer pct_in_cluster if present, else default_res
+default_color = "pct_in_cluster" if "pct_in_cluster" in color_options else default_res
 
-# --------- Sample discovery (cells summary) ---------
-def _find_samples_cells(base_dir: Path):
-    """Return {sample_name: path_to_cells_summary} by scanning subfolders."""
-    samples = {}
-    if not base_dir.exists():
-        return samples
-    for d in sorted([p for p in base_dir.iterdir() if p.is_dir()]):
-        # look for CSV or Parquet with *cells_summary*
-        hits = list(d.rglob("*cells_summary.csv")) + list(d.rglob("*cells_summary.parquet"))
-        if hits:
-            # prefer CSV if both present
-            choice = next((h for h in hits if h.suffix == ".csv"), hits[0])
-            samples[d.name] = choice
-    return samples
+color_dd     = W.Dropdown(options=color_options, value=default_color, description="Color by")
+cmap_dd      = W.Dropdown(options=cmap_all, value='tab20', description="Colormap")
+cluster_dd   = W.Dropdown(options=res_cols, value=default_res, description="Clusters for summaries")
+hide_smallcb = W.Checkbox(value=True, description="Hide small (<0.5%)")
+size_sl      = W.IntSlider(value=2, min=1, max=6, step=1, description="Size", continuous_update=False)
 
-_SAMPLES = _find_samples_cells(BASE_DIR)
+# Max pts: wide slider + synced numeric box
+max_allowed  = int(len(df))
+limit_sl     = W.IntSlider(value=min(len(df), 200_000),
+                           min=10_000, max=max_allowed, step=5_000,
+                           description="Max pts", continuous_update=False,
+                           layout=Layout(width='450px'))
+limit_box    = W.BoundedIntText(value=limit_sl.value, min=10_000, max=max_allowed, step=1000, description='')
+W.jslink((limit_sl, 'value'), (limit_box, 'value'))
 
-sample_dd  = W.Dropdown(
-    options=sorted(_SAMPLES.keys()),
-    value=(sorted(_SAMPLES.keys())[0] if _SAMPLES else None),
-    description="Sample",
-    layout=Layout(width="350px")
-)
-refresh_btn = W.Button(description="↻ Refresh", tooltip="Rescan folders", layout=Layout(width="110px"))
-info_html   = W.HTML()
-header_box  = W.HBox([sample_dd, refresh_btn])
+alpha_sl     = W.FloatSlider(value=0.7, min=0.1, max=1.0, step=0.05, description="Alpha", readout_format=".2f", continuous_update=False)
+flip_y_cb    = W.Checkbox(value=True,  description="Invert Y")
+flip_x_cb    = W.Checkbox(value=True,  description="Invert X")
 
+# NEW: horizontal cluster selector (built dynamically)
+cluster_label = W.HTML("<b>Show clusters:</b>")
+cluster_filter_box = W.Box(layout=Layout(display='flex', flex_flow='row wrap',
+                                         overflow_x='auto', overflow_y='auto',
+                                         border='1px solid #ddd', padding='4px',
+                                         max_height='80px', gap='6px'))
+
+controls_row  = W.HBox([color_dd, cmap_dd, cluster_dd, hide_smallcb])
+controls_row2 = W.HBox([size_sl, alpha_sl, W.HBox([limit_sl, limit_box], layout=Layout(align_items='center')), flip_y_cb, flip_x_cb])
+controls_row3 = W.VBox([cluster_label, cluster_filter_box])
+
+# ---------- Outputs ----------
 out_scatter = W.Output()
 out_counts  = W.Output()
 out_box     = W.Output()
 
-def _load_df(sample_key: str) -> pd.DataFrame:
-    p = _SAMPLES.get(sample_key, None)
-    if p is None:
-        raise FileNotFoundError("No cells summary file found for selected sample.")
-    if p.suffix == ".csv":
-        return pd.read_csv(p)
+# ---- Global extents ----
+XMIN, XMAX = float(df["array_col"].min()), float(df["array_col"].max())
+YMIN, YMAX = float(df["array_row"].min()), float(df["array_row"].max())
+_padx = 0.01 * (XMAX - XMIN) or 1.0
+_pady = 0.01 * (YMAX - YMIN) or 1.0
+
+def _cat_colors(categories, cmap_name):
+    cmap = mpl.colormaps.get_cmap(cmap_name)
+    N = max(len(categories), 1)
+    xs = np.linspace(0, 1, N, endpoint=False)
+    return [cmap(x) for x in xs]
+
+def _get_selected_from_box():
+    return {cb.description for cb in cluster_filter_box.children if isinstance(cb, W.Checkbox) and cb.value}
+
+def _set_box_from_list(names):
+    cluster_filter_box.children = [W.Checkbox(value=True, description=str(n), indent=False) for n in names]
+    for cb in cluster_filter_box.children:
+        cb.observe(_render, names='value')
+
+def _render(*_):
+    cby = color_dd.value
+    is_categorical = (cby in res_cols) or (not pd.api.types.is_numeric_dtype(df[cby]))
+    cluster_dd.disabled = is_categorical
+    cluster_col = cby if is_categorical else cluster_dd.value
+
+    # keep set
+    full_clusters_str = df[cluster_col].astype(str)
+    full_counts = full_clusters_str.value_counts()
+    if hide_smallcb.value:
+        keep_names = set(full_counts[(full_counts / len(df)) >= 0.005].index.astype(str))
     else:
-        return pd.read_parquet(p)
+        keep_names = set(full_counts.index.astype(str))
 
-def _set_info():
-    if not _SAMPLES:
-        info_html.value = f"<div style='color:#b00020'>No samples found under <code>{BASE_DIR}</code> (looked for *cells_summary.csv/parquet)</div>"
-    else:
-        info_html.value = f"<small>Base: <code>{BASE_DIR}</code> — {len(_SAMPLES)} sample(s) detected</small>"
+    # order & selector
+    cluster_order = full_counts.loc[list(keep_names)].sort_values(ascending=False).index.tolist()
+    current_names = [cb.description for cb in cluster_filter_box.children]
+    if current_names != list(map(str, cluster_order)):
+        _set_box_from_list(cluster_order)
 
-def _rescan(_btn=None):
-    global _SAMPLES
-    _SAMPLES = _find_samples_cells(BASE_DIR)
-    sample_dd.options = sorted(_SAMPLES.keys())
-    if sample_dd.options:
-        if sample_dd.value not in sample_dd.options:
-            sample_dd.value = sample_dd.options[0]
-    else:
-        sample_dd.value = None
-    _set_info()
-    _render()
+    selected_names = _get_selected_from_box()
+    active_names = [c for c in cluster_order if c in selected_names] if selected_names else []
 
-refresh_btn.on_click(_rescan)
-_set_info()
+    # sample
+    pool_mask = df[cluster_col].astype(str).isin(active_names) if active_names else df.iloc[[]].assign(_=True)["_"]
+    pool_idx = np.flatnonzero(pool_mask.to_numpy()) if len(active_names) > 0 else np.array([], dtype=int)
+    n = min(limit_sl.value, len(pool_idx))
+    data = df.iloc[np.random.default_rng().choice(pool_idx, size=n, replace=False)] if n > 0 else df.iloc[[]].copy()
 
-# =============== ORIGINAL WIDGETS/LOGIC (wrapped to use dynamic df) ===============
-# Placeholders; will be bound in _render() once df is loaded
-controls_row = controls_row2 = controls_row3 = None
-color_dd = cmap_dd = cluster_dd = hide_smallcb = size_sl = None
-limit_sl = limit_box = alpha_sl = flip_y_cb = flip_x_cb = None
-cluster_filter_box = None
+    # ---- SCATTER ----
+    with out_scatter:
+        out_scatter.clear_output(wait=True)
+        x = data["array_col"].to_numpy()
+        y = data["array_row"].to_numpy()
+        fig, ax = plt.subplots(figsize=(9, 9))
 
-def _build_ui(df: pd.DataFrame, sample_id: str):
-    global controls_row, controls_row2, controls_row3
-    global color_dd, cmap_dd, cluster_dd, hide_smallcb, size_sl
-    global limit_sl, limit_box, alpha_sl, flip_y_cb, flip_x_cb
-    global cluster_filter_box
-
-    # ---------- Basic sanity ----------
-    needed = {"array_row","array_col"}
-    missing = needed - set(df.columns)
-    if missing:
-        raise KeyError(f"Missing columns: {missing}")
-
-    # ---------- Columns ----------
-    res_cols = [c for c in df.columns if c.startswith("resolution_leiden_")]
-    if not res_cols:
-        raise ValueError("No 'resolution_leiden_*' columns found.")
-    qc_cols = [c for c in [
-        "n_genes_by_counts","total_counts","log1p_total_counts",
-        "pct_counts_mt","counts_per_bin","genes_per_bin"
-    ] if c in df.columns]
-
-    # add pct_in_cluster if present (so you can color by it)
-    extra_cols = []
-    if "pct_in_cluster" in df.columns:
-        extra_cols.append("pct_in_cluster")
-
-    color_options = res_cols + qc_cols + extra_cols
-
-    # choose default resolution = resolution_leiden_0.5 if available
-    default_res = next((c for c in res_cols if c == "resolution_leiden_0.5"), res_cols[0])
-
-    # ---------- Palettes ----------
-    cmaps_cat = ['tab10','tab20','Set1','Set2','Set3','Pastel1','Pastel2','Dark2','Accent','Paired','tab20b','tab20c']
-    cmaps_cont = ['viridis','plasma','inferno','magma','cividis','Spectral','coolwarm','bwr','seismic','RdBu_r','PiYG','PRGn','BrBG','rainbow','nipy_spectral','Greys','Blues','Greens','Oranges','Reds']
-    cmap_all = cmaps_cat + cmaps_cont
-
-    # ---------- Widgets ----------
-    # default color-by: prefer pct_in_cluster if present, else default_res
-    default_color = "pct_in_cluster" if "pct_in_cluster" in color_options else default_res
-
-    color_dd     = W.Dropdown(options=color_options, value=default_color, description="Color by")
-    cmap_dd      = W.Dropdown(options=cmap_all, value='tab20', description="Colormap")
-    cluster_dd   = W.Dropdown(options=res_cols, value=default_res, description="Clusters for summaries")
-    hide_smallcb = W.Checkbox(value=True, description="Hide small (<0.5%)")
-    size_sl      = W.IntSlider(value=2, min=1, max=6, step=1, description="Size", continuous_update=False)
-
-    # Max pts: wide slider + synced numeric box
-    max_allowed  = int(len(df))
-    limit_sl     = W.IntSlider(value=min(len(df), 200_000),
-                               min=10_000, max=max_allowed, step=5_000,
-                               description="Max pts", continuous_update=False,
-                               layout=Layout(width='450px'))
-    limit_box    = W.BoundedIntText(value=limit_sl.value, min=10_000, max=max_allowed, step=1000, description='')
-    W.jslink((limit_sl, 'value'), (limit_box, 'value'))
-
-    alpha_sl     = W.FloatSlider(value=0.7, min=0.1, max=1.0, step=0.05, description="Alpha", readout_format=".2f", continuous_update=False)
-    flip_y_cb    = W.Checkbox(value=True,  description="Invert Y")
-    flip_x_cb    = W.Checkbox(value=True,  description="Invert X")
-
-    # NEW: horizontal cluster selector (built dynamically)
-    cluster_label = W.HTML("<b>Show clusters:</b>")
-    cluster_filter_box = W.Box(layout=Layout(display='flex', flex_flow='row wrap',
-                                             overflow_x='auto', overflow_y='auto',
-                                             border='1px solid #ddd', padding='4px',
-                                             max_height='80px', gap='6px'))
-
-    controls_row  = W.HBox([color_dd, cmap_dd, cluster_dd, hide_smallcb])
-    controls_row2 = W.HBox([size_sl, alpha_sl, W.HBox([limit_sl, limit_box], layout=Layout(align_items='center')), flip_y_cb, flip_x_cb])
-    controls_row3 = W.VBox([cluster_label, cluster_filter_box])
-
-    # ---- Global extents ----
-    XMIN, XMAX = float(df["array_col"].min()), float(df["array_col"].max())
-    YMIN, YMAX = float(df["array_row"].min()), float(df["array_row"].max())
-    _padx = 0.01 * (XMAX - XMIN) or 1.0
-    _pady = 0.01 * (YMAX - YMIN) or 1.0
-
-    def _cat_colors(categories, cmap_name):
-        cmap = mpl.colormaps.get_cmap(cmap_name)
-        N = max(len(categories), 1)
-        xs = np.linspace(0, 1, N, endpoint=False)
-        return [cmap(x) for x in xs]
-
-    def _get_selected_from_box():
-        return {cb.description for cb in cluster_filter_box.children if isinstance(cb, W.Checkbox) and cb.value}
-
-    def _set_box_from_list(names):
-        cluster_filter_box.children = [W.Checkbox(value=True, description=str(n), indent=False) for n in names]
-        for cb in cluster_filter_box.children:
-            cb.observe(_render, names='value')
-
-    def _render(*_):
-        cby = color_dd.value
-        is_categorical = (cby in res_cols) or (not pd.api.types.is_numeric_dtype(df[cby]))
-        cluster_dd.disabled = is_categorical
-        cluster_col = cby if is_categorical else cluster_dd.value
-
-        # keep set
-        full_clusters_str = df[cluster_col].astype(str)
-        full_counts = full_clusters_str.value_counts()
-        if hide_smallcb.value:
-            keep_names = set(full_counts[(full_counts / len(df)) >= 0.005].index.astype(str))
+        if is_categorical:
+            labels = data[cby].astype(str).to_numpy()
+            lut = _cat_colors(cluster_order, cmap_dd.value)
+            color_map = {nm: lut[i] for i, nm in enumerate(cluster_order)}
+            colors = [color_map.get(s, (0.6,0.6,0.6,1.0)) for s in labels]
+            ax.scatter(x, y, c=colors, s=size_sl.value, alpha=alpha_sl.value)
+            shown = (active_names or cluster_order)[:20]
+            handles = [plt.Line2D([0],[0], marker='o', linestyle='', markersize=6,
+                                  markerfacecolor=color_map[nm], markeredgecolor="none", label=str(nm))
+                       for nm in shown]
+            if handles:
+                ax.legend(handles=handles, title=cby, loc="upper right",
+                          fontsize=8, title_fontsize=9, frameon=True)
         else:
-            keep_names = set(full_counts.index.astype(str))
+            vals = data[cby].to_numpy()
+            sc = ax.scatter(x, y, c=vals, cmap=cmap_dd.value, s=size_sl.value, alpha=alpha_sl.value)
+            cbar = plt.colorbar(sc, ax=ax, fraction=0.046, pad=0.02)
+            cbar.ax.tick_params(labelsize=8)
 
-        # order & selector
-        cluster_order = full_counts.loc[list(keep_names)].sort_values(ascending=False).index.tolist()
-        current_names = [cb.description for cb in cluster_filter_box.children]
-        if current_names != list(map(str, cluster_order)):
-            _set_box_from_list(cluster_order)
+        ax.set_xlabel("array_col"); ax.set_ylabel("array_row")
+        if flip_x_cb.value: ax.set_xlim(XMAX + _padx, XMIN - _padx)
+        else:               ax.set_xlim(XMIN - _padx, XMAX + _padx)
+        if flip_y_cb.value: ax.set_ylim(YMAX + _pady, YMIN - _pady)
+        else:               ax.set_ylim(YMIN - _pady, YMAX + _pady)
 
-        selected_names = _get_selected_from_box()
-        active_names = [c for c in cluster_order if c in selected_names] if selected_names else []
+        ax.set_title(f"{sample_id} — {len(data):,} cells — {cby}", fontsize=11)
+        plt.tight_layout(); from IPython.display import display as _d; _d(fig); plt.close(fig)
 
-        # sample
-        if active_names:
-            pool_mask = df[cluster_col].astype(str).isin(active_names)
-            pool_idx = np.flatnonzero(pool_mask.to_numpy())
-        else:
-            pool_idx = np.array([], dtype=int)
-        n = min(limit_sl.value, len(pool_idx))
-        data = df.iloc[np.random.default_rng().choice(pool_idx, size=n, replace=False)] if n > 0 else df.iloc[[]].copy()
+    # ---- BOTTOM PLOTS ----
+    palette = _cat_colors(cluster_order, cmap_dd.value)
+    color_map = {cluster_order[i]: palette[i] for i in range(len(cluster_order))}
+    clusters_str_full = df[cluster_col].astype(str)
+    active_order = [c for c in cluster_order if c in active_names] if active_names else []
 
-        # ---- SCATTER ----
-        with out_scatter:
-            out_scatter.clear_output(wait=True)
-            x = data["array_col"].to_numpy()
-            y = data["array_row"].to_numpy()
-            fig, ax = plt.subplots(figsize=(9, 9))
-
-            if is_categorical:
-                labels = data[cby].astype(str).to_numpy()
-                lut = _cat_colors(cluster_order, cmap_dd.value)
-                color_map = {nm: lut[i] for i, nm in enumerate(cluster_order)}
-                colors = [color_map.get(s, (0.6,0.6,0.6,1.0)) for s in labels]
-                ax.scatter(x, y, c=colors, s=size_sl.value, alpha=alpha_sl.value)
-                shown = (active_names or cluster_order)[:20]
-                handles = [plt.Line2D([0],[0], marker='o', linestyle='', markersize=6,
-                                      markerfacecolor=color_map[nm], markeredgecolor="none", label=str(nm))
-                           for nm in shown]
-                if handles:
-                    ax.legend(handles=handles, title=cby, loc="upper right",
-                              fontsize=8, title_fontsize=9, frameon=True)
-            else:
-                vals = data[cby].to_numpy()
-                sc = ax.scatter(x, y, c=vals, cmap=cmap_dd.value, s=size_sl.value, alpha=alpha_sl.value)
-                cbar = plt.colorbar(sc, ax=ax, fraction=0.046, pad=0.02)
-                cbar.ax.tick_params(labelsize=8)
-
-            ax.set_xlabel("array_col"); ax.set_ylabel("array_row")
-            if flip_x_cb.value: ax.set_xlim(XMAX + _padx, XMIN - _padx)
-            else:               ax.set_xlim(XMIN - _padx, XMAX + _padx)
-            if flip_y_cb.value: ax.set_ylim(YMAX + _pady, YMIN - _pady)
-            else:               ax.set_ylim(YMIN - _pady, YMAX + _pady)
-
-            ax.set_title(f"{sample_id} — {len(data):,} cells — {cby}", fontsize=11)
+    with out_counts:
+        out_counts.clear_output(wait=True)
+        if active_order:
+            counts = clusters_str_full.value_counts().reindex(active_order, fill_value=0)
+            fig, ax = plt.subplots(figsize=(10, max(2.5, 0.28*len(active_order))))
+            yidx = np.arange(len(active_order))
+            ax.barh(yidx, counts.values, color=[color_map[c] for c in active_order], edgecolor='none')
+            ax.set_yticks(yidx); ax.set_yticklabels(active_order, fontsize=8)
+            ax.set_xlabel("Cells"); ax.set_title(f"Counts per cluster ({cluster_col})", fontsize=10)
+            ax.invert_yaxis()
             plt.tight_layout(); from IPython.display import display as _d; _d(fig); plt.close(fig)
 
-        # ---- BOTTOM PLOTS ----
-        palette = _cat_colors(cluster_order, cmap_dd.value)
-        color_map = {cluster_order[i]: palette[i] for i in range(len(cluster_order))}
-        clusters_str_full = df[cluster_col].astype(str)
-        active_order = [c for c in cluster_order if c in active_names] if active_names else []
+    with out_box:
+        out_box.clear_output(wait=True)
+        if "total_counts" in df.columns and active_order:
+            data_box = [df.loc[clusters_str_full == c, "total_counts"].values for c in active_order]
+            fig, ax = plt.subplots(figsize=(10, max(2.5, 0.28*len(active_order))))
+            bp = ax.boxplot(data_box, vert=False, tick_labels=active_order, patch_artist=True, showfliers=False)
+            for patch, c in zip(bp['boxes'], [color_map[c] for c in active_order]):
+                patch.set_facecolor(c); patch.set_edgecolor('none')
+            for median in bp['medians']: median.set_color('black'); median.set_linewidth(1.2)
+            for whisker in bp['whiskers']: whisker.set_color('#444')
+            for cap in bp['caps']: cap.set_color('#444')
+            ax.set_xlabel("total_counts"); ax.set_title(f"Total counts per cluster ({cluster_col})", fontsize=10)
+            plt.tight_layout(); from IPython.display import display as _d; _d(fig); plt.close(fig)
 
-        with out_counts:
-            out_counts.clear_output(wait=True)
-            if active_order:
-                counts = clusters_str_full.value_counts().reindex(active_order, fill_value=0)
-                fig, ax = plt.subplots(figsize=(10, max(2.5, 0.28*len(active_order))))
-                yidx = np.arange(len(active_order))
-                ax.barh(yidx, counts.values, color=[color_map[c] for c in active_order], edgecolor='none')
-                ax.set_yticks(yidx); ax.set_yticklabels(active_order, fontsize=8)
-                ax.set_xlabel("Cells"); ax.set_title(f"Counts per cluster ({cluster_col})", fontsize=10)
-                ax.invert_yaxis()
-                plt.tight_layout(); from IPython.display import display as _d; _d(fig); plt.close(fig)
+# Reactivity
+for w in [color_dd, cmap_dd, cluster_dd, hide_smallcb, size_sl, alpha_sl, limit_sl, flip_y_cb, flip_x_cb, limit_box]:
+    w.observe(_render, names='value')
 
-        with out_box:
-            out_box.clear_output(wait=True)
-            if "total_counts" in df.columns and active_order:
-                data_box = [df.loc[clusters_str_full == c, "total_counts"].values for c in active_order]
-                fig, ax = plt.subplots(figsize=(10, max(2.5, 0.28*len(active_order))))
-                bp = ax.boxplot(data_box, vert=False, tick_labels=active_order, patch_artist=True, showfliers=False)
-                for patch, c in zip(bp['boxes'], [color_map[c] for c in active_order]):
-                    patch.set_facecolor(c); patch.set_edgecolor('none')
-                for median in bp['medians']: median.set_color('black'); median.set_linewidth(1.2)
-                for whisker in bp['whiskers']: whisker.set_color('#444')
-                for cap in bp['caps']: cap.set_color('#444')
-                ax.set_xlabel("total_counts"); ax.set_title(f"Total counts per cluster ({cluster_col})", fontsize=10)
-                plt.tight_layout(); from IPython.display import display as _d; _d(fig); plt.close(fig)
+# ---------- Layout ----------
+display(W.VBox([
+    controls_row,
+    controls_row2,
+    controls_row3,
+    out_scatter,
+    W.HBox([out_counts, out_box], layout=Layout(align_items='flex-start'))
+]))
 
-    # Reactivity
-    for w in [color_dd, cmap_dd, cluster_dd, hide_smallcb, size_sl, alpha_sl, limit_sl, flip_y_cb, flip_x_cb, limit_box]:
-        w.observe(_render, names='value')
-
-    # Layout render
-    display(controls_row, controls_row2, controls_row3, out_scatter, W.HBox([out_counts, out_box], layout=Layout(align_items='flex-start')))
-    _render()
-
-def _render(_chg=None):
-    out_scatter.clear_output(); out_counts.clear_output(); out_box.clear_output()
-    if not sample_dd.value:
-        display(HTML("<i>No samples to display.</i>"))
-        return
-    sample_id = sample_dd.value
-    df = _load_df(sample_id)
-    _build_ui(df, sample_id)
-
-# ---- Mount UI ----
-display(W.VBox([header_box, info_html]))
+# Initial draw
 _render()
