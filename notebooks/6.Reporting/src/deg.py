@@ -1,28 +1,58 @@
-# ---------- Basic sanity ----------
+# -*- coding: utf-8 -*-
 from pathlib import Path
 import pandas as pd, numpy as np, ipywidgets as W
 from IPython.display import display, Image, HTML
-import matplotlib.pyplot as plt
 
-# Where your files live (next to the notebook)
-DE_DIR   = DATA_DIR / "DE_exports"
+# Try to read global BASE_DIR; fallback to CWD
+BASE_DIR = globals().get("BASE_DIR", Path.cwd())
 
-assert DE_DIR.exists(), f"Missing folder: {DE_DIR}"
+def _find_samples_de(base_dir: Path):
+    """Return {sample_name: {'dir': sample_dir, 'de_files': [paths...]}}."""
+    out = {}
+    if not base_dir.exists():
+        return out
+    for d in sorted([p for p in base_dir.iterdir() if p.is_dir()]):
+        de_dir = d / "DE_exports"
+        files = sorted(de_dir.glob("DE_resolution_leiden_*.csv")) if de_dir.exists() else []
+        if files:
+            out[d.name] = {"dir": d, "de_dir": de_dir, "de_files": files}
+    return out
 
+_SAMPLES = _find_samples_de(BASE_DIR)
 
+sample_dd = W.Dropdown(
+    options=sorted(_SAMPLES.keys()),
+    value=(sorted(_SAMPLES.keys())[0] if _SAMPLES else None),
+    description="Sample",
+    layout=W.Layout(width="350px")
+)
+refresh_btn = W.Button(description="↻ Refresh", tooltip="Rescan", layout=W.Layout(width="110px"))
+info_html = W.HTML()
+header = W.HBox([sample_dd, refresh_btn])
 
-# Discover DEG CSVs and available resolutions
-de_files = sorted(DE_DIR.glob("DE_resolution_leiden_*.csv"))
-assert de_files, f"No DEG files matching DE_resolution_leiden_*.csv found in {DE_DIR}"
+def _set_info():
+    if not _SAMPLES:
+        info_html.value = f"<div style='color:#b00020'>No DE folders found under <code>{BASE_DIR}</code> (looked for <code>*/DE_exports/DE_resolution_leiden_*.csv</code>)</div>"
+    else:
+        info_html.value = f"<small>Base: <code>{BASE_DIR}</code> — {len(_SAMPLES)} sample(s) with DE</small>"
 
-def _res_from_path(p: Path) -> str:
-    return p.stem.replace("DE_", "")
+def _rescan(_=None):
+    global _SAMPLES
+    _SAMPLES = _find_samples_de(BASE_DIR)
+    sample_dd.options = sorted(_SAMPLES.keys())
+    if sample_dd.options:
+        if sample_dd.value not in sample_dd.options:
+            sample_dd.value = sample_dd.options[0]
+    else:
+        sample_dd.value = None
+    _set_info()
+    _refresh_resolutions()
 
-resolutions = [_res_from_path(p) for p in de_files]
-res2file = { _res_from_path(p): p for p in de_files }
+refresh_btn.on_click(_rescan)
+_set_info()
 
-# ---------- Widgets ----------
-res_dd      = W.Dropdown(options=resolutions, value=resolutions[0], description="Resolution")
+# ---------- Dynamic resolution mapping ----------
+res_dd      = W.Dropdown(options=[], description="Resolution")
 top_mode_dd = W.Dropdown(options=["Per-cluster top N", "Global top N"], value="Per-cluster top N", description="Top mode")
 topN_sl     = W.IntSlider(value=20, min=5, max=200, step=5, description="Top N", continuous_update=False)
 
@@ -40,35 +70,48 @@ sort_by_dd  = W.Dropdown(
 )
 asc_cb      = W.Checkbox(value=False, description="Ascending")
 
-# Cluster selection as CHECKBOXES (+ hide small clusters)
+# Cluster selection + pagination
 hide_small_cb = W.Checkbox(value=True, description="Hide clusters <0.5%")
 clusters_box  = W.VBox([])  # filled dynamically with Checkboxes
 select_all_btn  = W.Button(description="All", layout=W.Layout(width="60px"))
 select_none_btn = W.Button(description="None", layout=W.Layout(width="60px"))
 
-# Gene filter, quick toggles
 gene_q      = W.Text(value="", description="Gene contains")
 only_up_cb  = W.Checkbox(value=False, description="Only upregulated (logFC>0)")
 sig_cb      = W.Checkbox(value=True,  description="Only significant")
 alpha_ft    = W.FloatText(value=0.05, description="α (p_adj)", step=1e-4)
 
-# Pagination (new)
 page_size = W.IntSlider(value=50, min=10, max=500, step=10, description="Rows/page")
 page      = W.IntSlider(value=1, min=1, max=1, step=1, description="Page")
 
-# I/O
 export_btn  = W.Button(description="Export filtered CSV", button_style="")
 status_out  = W.Output()
 table_out   = W.Output()
 png_out     = W.Output()
 
-# internal guard/cache
 _updating = False
 _current_df = None
+_res2file = {}
 
-# ---------- Helpers ----------
+def _res_from_path(p: Path) -> str:
+    # DE_resolution_leiden_0.5.csv -> resolution_leiden_0.5
+    return p.stem.replace("DE_", "")
+
+def _refresh_resolutions(*_):
+    global _res2file
+    if not sample_dd.value:
+        res_dd.options = []
+        return
+    files = _SAMPLES[sample_dd.value]["de_files"]
+    res_keys = [_res_from_path(p) for p in files]
+    _res2file = { _res_from_path(p): p for p in files }
+    res_dd.options = res_keys
+    if res_keys:
+        res_dd.value = res_keys[0]
+    _update()
+
 def _load_deg(res_key: str) -> pd.DataFrame:
-    df = pd.read_csv(res2file[res_key])
+    df = pd.read_csv(_res2file[res_key])
     needed = ["names","scores","logfoldchanges","pvals","pvals_adj",
               "pct_diff","pct_in_cluster","pct_in_rest","cluster","resolution","frac_in_dataset"]
     for c in needed:
@@ -133,6 +176,9 @@ def _topN(df: pd.DataFrame) -> pd.DataFrame:
 
 def _update(*_):
     global _updating, _current_df
+    if not sample_dd.value or not res_dd.options:
+        table_out.clear_output(); png_out.clear_output()
+        return
     if _updating: return
     _updating = True
     try:
@@ -142,18 +188,15 @@ def _update(*_):
         q = _apply_filters(_current_df)
         out = _topN(q)
 
-        # requested columns only (and order)
         cols = ["cluster", "names", "scores", "logfoldchanges",
                 "pvals", "pvals_adj", "frac_in_dataset",
                 "pct_in_cluster", "pct_in_rest", "pct_diff"]
         out = out[[c for c in cols if c in out.columns]].copy()
 
-        # stable sort: cluster then current sort key
         if "cluster" in out.columns and sort_by_dd.value in out.columns:
             out = out.sort_values(["cluster", sort_by_dd.value],
                                   ascending=[True, asc_cb.value])
 
-        # ---- Pagination (4 lines) ----
         total = len(out)
         page.max = max(1, (total-1)//page_size.value + 1)
         i = (page.value-1) * page_size.value
@@ -170,7 +213,8 @@ def _update(*_):
         with png_out:
             png_out.clear_output(wait=True)
             base = res_dd.value
-            png_path = DE_DIR / f"matrixplot_{base}.png"
+            de_dir = _SAMPLES[sample_dd.value]["de_dir"]
+            png_path = de_dir / f"matrixplot_{base}.png"
             if png_path.exists():
                 display(Image(filename=str(png_path), embed=True))
             else:
@@ -180,14 +224,17 @@ def _update(*_):
 
 def _on_res_change(_): _update()
 def _export(_):
-    df = _current_df if _current_df is not None else _load_deg(res_dd.value)
+    if _current_df is None:
+        return
+    df = _current_df
     q  = _apply_filters(df)
     out = _topN(q)
     cols = ["cluster", "names", "scores", "logfoldchanges",
             "pvals", "pvals_adj", "frac_in_dataset",
             "pct_in_cluster", "pct_in_rest", "pct_diff"]
     out = out[[c for c in cols if c in out.columns]]
-    dest = DE_DIR / f"DEUI_{res_dd.value}_filtered.csv"
+    de_dir = _SAMPLES[sample_dd.value]["de_dir"]
+    dest = de_dir / f"DEUI_{res_dd.value}_filtered.csv"
     out.to_csv(dest, index=False)
     with status_out:
         status_out.clear_output(wait=True)
@@ -204,6 +251,7 @@ def _select_none(_):
     _update()
 
 # ---------- Wire events & layout ----------
+sample_dd.observe(_refresh_resolutions, names="value")
 res_dd.observe(_on_res_change, names="value")
 for w in [top_mode_dd, topN_sl, pval_max, padj_max, lfc_min, pdiff_min,
           sort_by_dd, asc_cb, gene_q, only_up_cb, sig_cb, alpha_ft,
@@ -224,7 +272,7 @@ cluster_panel = W.VBox([
     W.Box([clusters_box], layout=W.Layout(max_height='220px', overflow='auto', border='1px solid #ddd', padding='4px'))
 ])
 
-display(W.VBox([controls1, controls2, controls3, cluster_panel, controls_pager, table_out, png_out]))
+display(W.VBox([header, info_html, controls1, controls2, controls3, cluster_panel, controls_pager, table_out, png_out]))
 
-# initial draw
-_update()
+# initial
+_refresh_resolutions()
