@@ -64,6 +64,7 @@ resolutions = []
 res2file    = {}
 for r in RES_CANDIDATES:
     url = _remote_csv_url(SAMPLE_ID, r)
+    print(f'DE Table from :', url)
     try:
         df_probe = _read_csv_robust(url)
         resolutions.append(r)
