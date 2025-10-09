@@ -24,7 +24,7 @@ color_options = res_cols + qc_cols + extra_cols
 default_res = next((c for c in res_cols if c == "resolution_leiden_0.5"), res_cols[0])
 
 # ---------- Palettes ----------
-import matplotlib as mpl, numpy as np, matplotlib.pyplot as plt, ipywidgets as W
+import matplotlib as mpl, numpy as np, matplotlib.pyplot as plt, ipywidgets as W, pandas as pd
 from ipywidgets import Layout
 cmaps_cat = ['tab10','tab20','Set1','Set2','Set3','Pastel1','Pastel2','Dark2','Accent','Paired','tab20b','tab20c']
 cmaps_cont = ['viridis','plasma','inferno','magma','cividis','Spectral','coolwarm','bwr','seismic','RdBu_r','PiYG','PRGn','BrBG','rainbow','nipy_spectral','Greys','Blues','Greens','Oranges','Reds']
@@ -53,16 +53,22 @@ alpha_sl     = W.FloatSlider(value=0.7, min=0.1, max=1.0, step=0.05, description
 flip_y_cb    = W.Checkbox(value=True,  description="Invert Y")
 flip_x_cb    = W.Checkbox(value=True,  description="Invert X")
 
-# NEW: horizontal cluster selector (built dynamically)
+# --- Cluster selector + clear button ---
 cluster_label = W.HTML("<b>Show clusters:</b>")
 cluster_filter_box = W.Box(layout=Layout(display='flex', flex_flow='row wrap',
                                          overflow_x='auto', overflow_y='auto',
                                          border='1px solid #ddd', padding='4px',
                                          max_height='80px', gap='6px'))
 
+btn_clear = W.Button(description="Unselect all", tooltip="Clear all cluster checkboxes",
+                     layout=Layout(width='120px', margin='0 0 0 8px'))
+
+# Header row for the cluster box
+cluster_header = W.HBox([cluster_label, btn_clear], layout=Layout(align_items='center'))
+
 controls_row  = W.HBox([color_dd, cmap_dd, cluster_dd, hide_smallcb])
 controls_row2 = W.HBox([size_sl, alpha_sl, W.HBox([limit_sl, limit_box], layout=Layout(align_items='center')), flip_y_cb, flip_x_cb])
-controls_row3 = W.VBox([cluster_label, cluster_filter_box])
+controls_row3 = W.VBox([cluster_header, cluster_filter_box])
 
 # ---------- Outputs ----------
 out_scatter = W.Output()
@@ -75,6 +81,9 @@ YMIN, YMAX = float(df["array_row"].min()), float(df["array_row"].max())
 _padx = 0.01 * (XMAX - XMIN) or 1.0
 _pady = 0.01 * (YMAX - YMIN) or 1.0
 
+# ---- Helpers ----
+_RENDER_LOCK = False  # prevents re-render storms when toggling many checkboxes at once
+
 def _cat_colors(categories, cmap_name):
     cmap = mpl.colormaps.get_cmap(cmap_name)
     N = max(len(categories), 1)
@@ -85,11 +94,28 @@ def _get_selected_from_box():
     return {cb.description for cb in cluster_filter_box.children if isinstance(cb, W.Checkbox) and cb.value}
 
 def _set_box_from_list(names):
+    # build fresh checkboxes (default = selected)
     cluster_filter_box.children = [W.Checkbox(value=True, description=str(n), indent=False) for n in names]
     for cb in cluster_filter_box.children:
         cb.observe(_render, names='value')
 
+def _unselect_all(_=None):
+    global _RENDER_LOCK
+    _RENDER_LOCK = True
+    try:
+        for cb in cluster_filter_box.children:
+            if isinstance(cb, W.Checkbox) and cb.value:
+                cb.value = False
+    finally:
+        _RENDER_LOCK = False
+        _render()
+
+btn_clear.on_click(_unselect_all)
+
 def _render(*_):
+    if _RENDER_LOCK:
+        return
+
     cby = color_dd.value
     is_categorical = (cby in res_cols) or (not pd.api.types.is_numeric_dtype(df[cby]))
     cluster_dd.disabled = is_categorical
@@ -113,8 +139,12 @@ def _render(*_):
     active_names = [c for c in cluster_order if c in selected_names] if selected_names else []
 
     # sample
-    pool_mask = df[cluster_col].astype(str).isin(active_names) if active_names else df.iloc[[]].assign(_=True)["_"]
-    pool_idx = np.flatnonzero(pool_mask.to_numpy()) if len(active_names) > 0 else np.array([], dtype=int)
+    if len(active_names) > 0:
+        pool_mask = df[cluster_col].astype(str).isin(active_names)
+        pool_idx = np.flatnonzero(pool_mask.to_numpy())
+    else:
+        pool_idx = np.array([], dtype=int)
+
     n = min(limit_sl.value, len(pool_idx))
     data = df.iloc[np.random.default_rng().choice(pool_idx, size=n, replace=False)] if n > 0 else df.iloc[[]].copy()
 
@@ -165,7 +195,7 @@ def _render(*_):
             counts = clusters_str_full.value_counts().reindex(active_order, fill_value=0)
             fig, ax = plt.subplots(figsize=(10, max(2.5, 0.28*len(active_order))))
             yidx = np.arange(len(active_order))
-            ax.barh(yidx, counts.values, color=[color_map[c] for c in active_order], edgecolor='none')
+            ax.barh(yidx, counts.values, edgecolor='none', color=[color_map[c] for c in active_order])
             ax.set_yticks(yidx); ax.set_yticklabels(active_order, fontsize=8)
             ax.set_xlabel("Cells"); ax.set_title(f"Counts per cluster ({cluster_col})", fontsize=10)
             ax.invert_yaxis()
