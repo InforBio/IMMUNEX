@@ -1,3 +1,4 @@
 *.npz filter=lfs diff=lfs merge=lfs -text
 *.geojson filter=lfs diff=lfs merge=lfs -text
 *.ipynb filter=lfs diff=lfs merge=lfs -text
+notebooks/6.Reporting/**/DE_exports/*.csv filter=lfs diff=lfs merge=lfs -text

@@ -14,7 +14,7 @@ def _res_from_path(p: Path) -> str:
 resolutions = [_res_from_path(p) for p in de_files]
 res2file = { _res_from_path(p): p for p in de_files }
 
-# ---- Panels (unchanged) ----
+# ---- Panels (same as your post; truncated if you like) ----
 PANEL_NSCLC = {
     "T cells (CD3/CD4/CD8)": ["CD3D","CD3E","CD4","CD8A","CD8B"],
     "Cytotoxic T/NK effector": ["NKG7","GZMB","PRF1","GNLY","KLRD1"],
@@ -80,7 +80,6 @@ PANEL_PA = {
 # ---------- Widgets ----------
 res_dd   = W.Dropdown(options=resolutions, value=resolutions[0], description="Resolution")
 panel_dd = W.Dropdown(options=["NSCLC panel","P.A. panel"], value="NSCLC panel", description="Markers")
-
 def _current_panel():
     return PANEL_NSCLC if panel_dd.value == "NSCLC panel" else PANEL_PA
 
@@ -88,19 +87,13 @@ ctype_dd = W.Dropdown(options=list(_current_panel().keys()),
                       value=("Tumor" if "Tumor" in _current_panel() else "Tumor/Epithelial (pan)"),
                       description="Cell type")
 
-# ---- Value options now include expression stats & deltas ----
+# Value options (unchanged; filters are independent)
 VAL_OPTIONS = [
-    # classic
     "scores","logfoldchanges","pct_diff","pct_in_cluster","pct_in_rest","-log10(pvals_adj)",
-    # means & FC
     "mean_in","mean_rest","diff_mean","log2fc_mean",
-    # non-zero means
     "nz_mean_in","nz_mean_rest","nz_mean_delta",
-    # medians (sampled)
     "median_in_s","median_rest_s","median_delta_s",
-    # log1p means (sampled)
     "mean_log1p_in_s","mean_log1p_rest_s","mean_log1p_delta_s",
-    # zero fraction (0..1)
     "zero_frac_in","zero_frac_rest","zero_frac_delta",
 ]
 value_dd = W.Dropdown(options=VAL_OPTIONS, value="scores", description="Value")
@@ -123,19 +116,30 @@ col_cl_cb  = W.Checkbox(value=True,  description="Cluster cols")
 vmin_ft    = W.FloatText(value=np.nan, description="vmin")
 vmax_ft    = W.FloatText(value=np.nan, description="vmax")
 
-# ---- NEW: Filters (leave NaN to disable a filter) ----
-p_adj_max     = W.FloatText(value=np.nan, description="p_adj ≤")
-log2fc_min    = W.FloatText(value=np.nan, description="log2FC ≥")
-pct_in_min    = W.FloatText(value=np.nan, description="%in ≥")        # expects 0..100
-median_in_min = W.FloatText(value=np.nan, description="median_in ≥")
-log1p_in_min  = W.FloatText(value=np.nan, description="log1p_in ≥")
-nzmean_in_min = W.FloatText(value=np.nan, description="nz_mean_in ≥")
-zero_in_max   = W.FloatText(value=np.nan, description="zero_in ≤")    # expects 0..1
+# ---- NEW: gene-level MEAN filters (use mean_in) ----
+mean_any_min  = W.FloatText(
+    description="≥ mean in any cluster",
+    description_tooltip="Keep genes whose max(mean_in across clusters) ≥ this",
+    style={'description_width': '300px'},
+    layout=W.Layout(width='400px'),
+    value=0.05,
+)
+
+
+mean_mean_min = W.FloatText(
+    value=0,
+    description="≥ mean in all clusters",
+    description_tooltip="Keep genes whose mean(mean_in across clusters) ≥ this",
+    style={'description_width': '300px'},
+    layout=W.Layout(width='400px'),
+
+)
+
 
 ui = W.VBox([
-    W.HBox([res_dd, panel_dd, ctype_dd, value_dd, agg_dd]),
-    W.HBox([scale_dd, cmap_dd, hide_small, row_cl_cb, col_cl_cb, vmin_ft, vmax_ft]),
-    W.HBox([p_adj_max, log2fc_min, pct_in_min, median_in_min, log1p_in_min, nzmean_in_min, zero_in_max]),
+    W.HBox([res_dd, panel_dd, ctype_dd, value_dd]),
+    W.HBox([scale_dd, cmap_dd, hide_small, row_cl_cb, col_cl_cb]),
+    W.HBox([mean_any_min, mean_mean_min]),
 ])
 out = W.Output()
 
@@ -145,37 +149,31 @@ def _refresh_celltypes(*_):
     default = "Tumor" if "Tumor" in panel else ("Tumor/Epithelial (pan)" if "Tumor/Epithelial (pan)" in panel else opts[0])
     ctype_dd.options = opts
     ctype_dd.value = default
-
 panel_dd.observe(_refresh_celltypes, names="value")
 
 # ---------- Helpers ----------
-NEEDED_BASE_COLS = [
-    "names","scores","logfoldchanges","pvals_adj","pct_diff","pct_in_cluster","pct_in_rest",
-    "cluster","frac_in_dataset",
-    # new stats
-    "mean_in","mean_rest","nz_mean_in","nz_mean_rest","median_in_s","median_rest_s",
-    "q10_in_s","q90_in_s","q10_rest_s","q90_rest_s","mean_log1p_in_s","mean_log1p_rest_s",
+NEEDED = [
+    "names","cluster","frac_in_dataset","pvals_adj","pct_in_cluster","pct_in_rest","pct_diff",
+    "scores","logfoldchanges",
+    "mean_in","mean_rest","nz_mean_in","nz_mean_rest",
+    "median_in_s","median_rest_s","mean_log1p_in_s","mean_log1p_rest_s",
     "zero_frac_in","zero_frac_rest","diff_mean","log2fc_mean"
 ]
 
 def _load_deg(res_key: str) -> pd.DataFrame:
     df = pd.read_csv(res2file[res_key])
-    for c in NEEDED_BASE_COLS:
-        if c not in df.columns:
-            df[c] = np.nan
+    for c in NEEDED:
+        if c not in df.columns: df[c] = np.nan
     df["cluster"] = df["cluster"].astype(str)
     df["names"]   = df["names"].astype(str)
     return df
 
 def _prepare_values(df: pd.DataFrame, val_col: str) -> pd.DataFrame:
-    """Return a copy with a numeric column V ready for pivot/agg."""
     X = df.copy()
     if val_col == "-log10(pvals_adj)":
         V = -np.log10(X["pvals_adj"].astype(float))
         V.replace([np.inf, -np.inf], np.nan, inplace=True)
         return X.assign(V=V)
-
-    # deltas composed on the fly
     if val_col == "nz_mean_delta":
         return X.assign(V = X["nz_mean_in"] - X["nz_mean_rest"])
     if val_col == "median_delta_s":
@@ -184,11 +182,8 @@ def _prepare_values(df: pd.DataFrame, val_col: str) -> pd.DataFrame:
         return X.assign(V = X["mean_log1p_in_s"] - X["mean_log1p_rest_s"])
     if val_col == "zero_frac_delta":
         return X.assign(V = X["zero_frac_in"] - X["zero_frac_rest"])
-
-    # direct pass-through columns
     if val_col in X.columns:
         return X.rename(columns={val_col: "V"})
-
     raise ValueError(f"Unknown value column: {val_col}")
 
 def _build_matrix(df: pd.DataFrame, genes, val_col, agg):
@@ -218,36 +213,45 @@ def _apply_scale(mat: pd.DataFrame, mode: str):
         return (M - mn) / (mx - mn) if mx != mn else M * np.nan
     return M
 
-def _apply_row_filters(df: pd.DataFrame) -> pd.DataFrame:
-    """Row-level filters on cluster×gene rows. NaN disables a given filter."""
-    Q = df.copy()
-    def _isnum(x): 
-        try: return not np.isnan(float(x))
-        except: return False
+def _apply_gene_mean_filters(sub: pd.DataFrame, selected_genes: list):
+    """
+    Compute per-gene stats across clusters using mean_in (full cluster mean).
+    Keeps a gene if:
+      - max mean across clusters ≥ mean_any_min (if set)
+      - mean of means across clusters ≥ mean_mean_min (if set)
+    Missing (gene, cluster) means are treated as 0.
+    """
+    if sub.empty:
+        return sub, pd.DataFrame(columns=["min_mean","mean_mean","max_mean","n_clusters"])
 
-    if _isnum(p_adj_max.value):
-        Q = Q[Q["pvals_adj"] <= float(p_adj_max.value)]
-    if _isnum(log2fc_min.value):
-        Q = Q[Q["log2fc_mean"] >= float(log2fc_min.value)]
-    if _isnum(pct_in_min.value):
-        Q = Q[Q["pct_in_cluster"] >= float(pct_in_min.value)]  # 0..100
-    if _isnum(median_in_min.value):
-        Q = Q[Q["median_in_s"] >= float(median_in_min.value)]
-    if _isnum(log1p_in_min.value):
-        Q = Q[Q["mean_log1p_in_s"] >= float(log1p_in_min.value)]
-    if _isnum(nzmean_in_min.value):
-        Q = Q[Q["nz_mean_in"] >= float(nzmean_in_min.value)]
-    if _isnum(zero_in_max.value):
-        Q = Q[Q["zero_frac_in"] <= float(zero_in_max.value)]    # 0..1
-    return Q
+    G = sub[sub["names"].isin(selected_genes)].copy()
+    G["mean_in"] = pd.to_numeric(G["mean_in"], errors="coerce").fillna(0.0)
+    G["cluster"] = G["cluster"].astype(str)
+    all_clusters = sorted(sub["cluster"].astype(str).unique().tolist())
+
+    idx = pd.MultiIndex.from_product([selected_genes, all_clusters], names=["names","cluster"])
+    means = (G.set_index(["names","cluster"])["mean_in"]
+               .reindex(idx, fill_value=0.0)
+               .groupby(level="names")
+               .agg(min_mean="min", mean_mean="mean", max_mean="max", n_clusters="count"))
+
+    keep = pd.Series(True, index=means.index)
+    if not np.isnan(mean_any_min.value):
+        keep &= (means["max_mean"]  >= float(mean_any_min.value))
+    if not np.isnan(mean_mean_min.value):
+        keep &= (means["mean_mean"] >= float(mean_mean_min.value))
+
+    kept_genes = means.index[keep].tolist()
+    Gf = G[G["names"].isin(kept_genes)].copy()
+    return Gf, means.loc[kept_genes]
 
 # ---------- Main drawing ----------
 def _draw(*_):
     with out:
         out.clear_output(wait=True)
         res_key = res_dd.value
-        genes   = _current_panel()[ctype_dd.value]
-        df      = _load_deg(res_key)
+        panel_genes = _current_panel()[ctype_dd.value]
+        df = _load_deg(res_key)
 
         # keep clusters ≥0.5% if available
         if hide_small.value and df["frac_in_dataset"].notna().any():
@@ -256,19 +260,22 @@ def _draw(*_):
             keep = set(big.loc[big["frac_in_dataset"] >= 0.005, "cluster"])
             df = df[df["cluster"].isin(keep)]
 
-        sub = df[df["names"].isin(genes)].copy()
+        # subset to panel genes
+        sub = df[df["names"].isin(panel_genes)].copy()
         if sub.empty:
             display(HTML(f"<i>No matching genes in {res_key} for {ctype_dd.value}.</i>"))
             return
 
-        # ---- NEW: apply filters ----
-        sub = _apply_row_filters(sub)
+        # ---- NEW: gene filters based on mean_in across clusters ----
+        sub, gene_stats = _apply_gene_mean_filters(sub, panel_genes)
         if sub.empty:
-            display(HTML("<i>All rows filtered out by thresholds.</i>"))
+            display(HTML("<i>All genes filtered out by mean thresholds.</i>"))
             return
 
+        genes_kept = [g for g in panel_genes if g in sub["names"].unique()]
+
         # ---- build matrix and scale ----
-        mat = _build_matrix(sub, genes, value_dd.value, agg_dd.value)
+        mat = _build_matrix(sub, genes_kept, value_dd.value, agg_dd.value)
         mat = _apply_scale(mat, scale_dd.value)
 
         # --- Clean numeric matrix ---
@@ -282,17 +289,22 @@ def _draw(*_):
             return
         mat = mat.fillna(0)
 
-        # Keep sensible order if clustering off
+        # Row/col ordering
         if not row_cl_cb.value:
             order = np.argsort(-np.nanmean(mat.values, axis=1))
             mat = mat.iloc[order, :]
         if not col_cl_cb.value:
-            # keep panel order for columns (but only those present)
-            keep_cols = [g for g in genes if g in mat.columns]
-            mat = mat.loc[:, keep_cols]
+            mat = mat.loc[:, genes_kept]
 
         vmin = None if np.isnan(vmin_ft.value) else float(vmin_ft.value)
         vmax = None if np.isnan(vmax_ft.value) else float(vmax_ft.value)
+
+        # Header showing how many genes survived
+        kept_info = f"<small>Kept {len(genes_kept)}/{len(panel_genes)} genes"
+        if not np.isnan(mean_any_min.value):  kept_info += f"; max(mean) ≥ {float(mean_any_min.value)}"
+        if not np.isnan(mean_mean_min.value): kept_info += f"; mean(mean) ≥ {float(mean_mean_min.value)}"
+        kept_info += "</small>"
+        display(HTML(kept_info))
 
         try:
             g = sns.clustermap(
@@ -317,7 +329,7 @@ def _draw(*_):
 # ---------- Reactivity ----------
 for w in [panel_dd, res_dd, ctype_dd, value_dd, agg_dd, scale_dd, cmap_dd,
           hide_small, row_cl_cb, col_cl_cb, vmin_ft, vmax_ft,
-          p_adj_max, log2fc_min, pct_in_min, median_in_min, log1p_in_min, nzmean_in_min, zero_in_max]:
+          mean_any_min, mean_mean_min]:
     w.observe(_draw, names="value")
 
 display(ui, out)
