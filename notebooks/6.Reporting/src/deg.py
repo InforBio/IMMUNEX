@@ -1,25 +1,83 @@
-# ---------- Basic sanity ----------
-from pathlib import Path
-import pandas as pd, numpy as np, ipywidgets as W
-from IPython.display import display, Image, HTML
+# ---------- Imports ----------
+import io, requests
+import numpy as np
+import pandas as pd
+import ipywidgets as W
 import matplotlib.pyplot as plt
+from IPython.display import display, HTML
 
-# Where your files live (next to the notebook)
-DE_DIR   = DATA_DIR / "DE_exports"
+# =========================
+#   REMOTE DATA CONFIG
+# =========================
+SAMPLE_ID = globals().get("SAMPLE_ID", "IMMUNEX001")  # IMMUNEX004..IMMUNEX015
+HE_SUFFIX = globals().get("HE_SUFFIX", globals().get("SEG_SUFFIX", "he0001"))
 
-assert DE_DIR.exists(), f"Missing folder: {DE_DIR}"
+# Candidate resolutions to expose (extend if you publish more)
+RES_CANDIDATES = ["resolution_leiden_0.5", "resolution_leiden_0.3"]
+
+def _remote_csv_url(sample_id: str, res_key: str) -> str:
+    return (
+        "https://media.githubusercontent.com/media/InforBio/IMMUNEX/refs/heads/main/"
+        f"notebooks/6.Reporting/files_{sample_id}__{HE_SUFFIX}/DE_exports/DE_{res_key}.csv"
+    )
+
+def _remote_png_url(sample_id: str, res_key: str) -> str:
+    return (
+        "https://raw.githubusercontent.com/InforBio/IMMUNEX/refs/heads/main/"
+        f"notebooks/6.Reporting/files_{sample_id}__{HE_SUFFIX}/DE_exports/matrixplot_{res_key}.png"
+    )
+
+REQUIRED_COLS = {
+    "names","cluster","scores","logfoldchanges","pvals","pvals_adj",
+    "pct_in_cluster","pct_in_rest","resolution"
+}
+OPTIONAL_COLS = {"pct_diff","frac_in_dataset","pct_nz_group","pct_nz_reference"}
+
+def _read_csv_robust(url: str) -> pd.DataFrame:
+    """HTTP GET + robust CSV parse. Try comma first, then tab."""
+    r = requests.get(url, timeout=60)
+    if r.status_code != 200:
+        raise RuntimeError(f"HTTP {r.status_code} for {url}")
+    text = r.text
+    # Quick 404/HTML guard
+    if "<html" in text.lower() or "not found" in text.lower():
+        raise RuntimeError(f"URL doesn’t return CSV (HTML/404): {url}")
+
+    # Try comma
+    df = pd.read_csv(io.StringIO(text))
+    if REQUIRED_COLS.issubset(set(df.columns)):
+        return df
+
+    # Try tab
+    df_tab = pd.read_csv(io.StringIO(text), sep="\t")
+    if REQUIRED_COLS.issubset(set(df_tab.columns)):
+        return df_tab
+
+    # If here, show a helpful diagnostic
+    raise ValueError(
+        f"CSV at {url} missing required cols.\n"
+        f"Found columns: {list(df.columns) if len(df.columns)>0 else '<<none>>'}"
+    )
+
+# Probe which resolutions actually exist and are valid
+resolutions = []
+res2file    = {}
+for r in RES_CANDIDATES:
+    url = _remote_csv_url(SAMPLE_ID, r)
+    try:
+        df_probe = _read_csv_robust(url)
+        resolutions.append(r)
+        res2file[r] = url
+    except Exception:
+        pass
 
 
 
-# Discover DEG CSVs and available resolutions
-de_files = sorted(DE_DIR.glob("DE_resolution_leiden_*.csv"))
-assert de_files, f"No DEG files matching DE_resolution_leiden_*.csv found in {DE_DIR}"
 
-def _res_from_path(p: Path) -> str:
-    return p.stem.replace("DE_", "")
-
-resolutions = [_res_from_path(p) for p in de_files]
-res2file = { _res_from_path(p): p for p in de_files }
+if not resolutions:
+    # Last resort: expose 0.5 and let the UI show the error text cleanly
+    resolutions = ["resolution_leiden_0.5"]
+    res2file[resolutions[0]] = _remote_csv_url(SAMPLE_ID, resolutions[0])
 
 # ---------- Widgets ----------
 res_dd      = W.Dropdown(options=resolutions, value=resolutions[0], description="Resolution")
@@ -35,12 +93,11 @@ pdiff_min   = W.FloatText(value=0.0,  description="pct_diff ≥", step=1.0)
 # Sort
 sort_by_dd  = W.Dropdown(
     options=["scores","logfoldchanges","pvals_adj","pvals","pct_diff","pct_in_cluster","pct_in_rest"],
-    value="scores",
-    description="Sort by"
+    value="scores", description="Sort by"
 )
 asc_cb      = W.Checkbox(value=False, description="Ascending")
 
-# Cluster selection as CHECKBOXES (+ hide small clusters)
+# Cluster selection panel
 hide_small_cb = W.Checkbox(value=True, description="Hide clusters <0.5%")
 clusters_box  = W.VBox([])  # filled dynamically with Checkboxes
 select_all_btn  = W.Button(description="All", layout=W.Layout(width="60px"))
@@ -52,7 +109,7 @@ only_up_cb  = W.Checkbox(value=False, description="Only upregulated (logFC>0)")
 sig_cb      = W.Checkbox(value=True,  description="Only significant")
 alpha_ft    = W.FloatText(value=0.05, description="α (p_adj)", step=1e-4)
 
-# Pagination (new)
+# Pagination
 page_size = W.IntSlider(value=50, min=10, max=500, step=10, description="Rows/page")
 page      = W.IntSlider(value=1, min=1, max=1, step=1, description="Page")
 
@@ -68,16 +125,23 @@ _current_df = None
 
 # ---------- Helpers ----------
 def _load_deg(res_key: str) -> pd.DataFrame:
-    df = pd.read_csv(res2file[res_key])
-    needed = ["names","scores","logfoldchanges","pvals","pvals_adj",
-              "pct_diff","pct_in_cluster","pct_in_rest","cluster","resolution","frac_in_dataset"]
-    for c in needed:
+    url = res2file[res_key]
+    df = _read_csv_robust(url)
+
+    # Fill optional columns when absent
+    if "pct_diff" not in df.columns and {"pct_nz_group","pct_nz_reference"}.issubset(df.columns):
+        df["pct_diff"] = df["pct_nz_group"]*100.0 - df["pct_nz_reference"]*100.0
+    for c in OPTIONAL_COLS:
         if c not in df.columns:
-            if c == "pct_diff" and ("pct_nz_group" in df.columns and "pct_nz_reference" in df.columns):
-                df["pct_diff"] = df["pct_nz_group"]*100.0 - df["pct_nz_reference"]*100.0
-            else:
-                df[c] = np.nan
+            df[c] = np.nan
+
+    # Types & cleanliness
     df["cluster"] = df["cluster"].astype(str)
+    df["names"]   = df["names"].astype(str)
+
+    # Ensure only columns (avoid index leaks)
+    if isinstance(df.index, pd.MultiIndex) or df.index.name is not None:
+        df = df.reset_index(drop=True)
     return df
 
 def _get_selected_clusters():
@@ -105,81 +169,127 @@ def _refresh_clusters_options(df: pd.DataFrame):
 
 def _apply_filters(df: pd.DataFrame) -> pd.DataFrame:
     q = df.copy()
+    # significance filter first
     if sig_cb.value and "pvals_adj" in q.columns:
-        q = q[q["pvals_adj"] <= alpha_ft.value]
-    if "pvals" in q.columns:          q = q[q["pvals"]      <= pval_max.value]
-    if "pvals_adj" in q.columns:      q = q[q["pvals_adj"]  <= padj_max.value]
-    if "logfoldchanges" in q.columns: q = q[q["logfoldchanges"] >= lfc_min.value]
-    if "pct_diff" in q.columns:       q = q[q["pct_diff"]   >= pdiff_min.value]
+        q = q[pd.to_numeric(q["pvals_adj"], errors="coerce") <= float(alpha_ft.value)]
+    if "pvals" in q.columns:
+        q = q[pd.to_numeric(q["pvals"], errors="coerce") <= float(pval_max.value)]
+    if "pvals_adj" in q.columns:
+        q = q[pd.to_numeric(q["pvals_adj"], errors="coerce") <= float(padj_max.value)]
+    if "logfoldchanges" in q.columns:
+        q = q[pd.to_numeric(q["logfoldchanges"], errors="coerce") >= float(lfc_min.value)]
+    if "pct_diff" in q.columns:
+        q = q[pd.to_numeric(q["pct_diff"], errors="coerce") >= float(pdiff_min.value)]
     if only_up_cb.value and "logfoldchanges" in q.columns:
-        q = q[q["logfoldchanges"] > 0]
+        q = q[pd.to_numeric(q["logfoldchanges"], errors="coerce") > 0]
+
     sel_clusters = _get_selected_clusters()
     if sel_clusters:
         q = q[q["cluster"].isin(sel_clusters)]
+
     if gene_q.value.strip():
         pat = gene_q.value.strip().lower()
-        q = q[q["names"].astype(str).str.lower().str.contains(pat, na=False)]
+        q = q[q["names"].str.lower().str.contains(pat, na=False)]
     return q
 
 def _topN(df: pd.DataFrame) -> pd.DataFrame:
-    key = sort_by_dd.value; ascending = asc_cb.value
+    key = sort_by_dd.value
+    ascending = bool(asc_cb.value)
+    if key not in df.columns:
+        return df.head(0)
     if top_mode_dd.value.startswith("Per-cluster"):
-        if key not in df.columns: return df.head(0)
-        return (df.groupby("cluster", group_keys=False)
-                  .apply(lambda x: x.sort_values(key, ascending=ascending).head(topN_sl.value)))
-    else:
-        if key not in df.columns: return df.head(0)
-        return df.sort_values(key, ascending=ascending).head(topN_sl.value)
+        # Sort first, then groupby-head to avoid MultiIndex and ambiguity
+        return (
+            df.sort_values(["cluster", key], ascending=[True, ascending])
+              .groupby("cluster", as_index=False, sort=False)
+              .head(int(topN_sl.value))
+        )
+    return df.sort_values(key, ascending=ascending).head(int(topN_sl.value))
 
+# ---------- Main update ----------
 def _update(*_):
     global _updating, _current_df
     if _updating: return
     _updating = True
     try:
-        _current_df = _load_deg(res_dd.value)
+        try:
+            _current_df = _load_deg(res_dd.value)
+        except Exception as e:
+            with table_out:
+                table_out.clear_output(wait=True)
+                display(HTML(f"<b style='color:#b00'>Failed to load CSV:</b> {e}"))
+            return
+
         _refresh_clusters_options(_current_df)
 
         q = _apply_filters(_current_df)
         out = _topN(q)
 
-        # requested columns only (and order)
-        cols = ["cluster", "names", "scores", "logfoldchanges",
-                "pvals", "pvals_adj", "frac_in_dataset",
-                "pct_in_cluster", "pct_in_rest", "pct_diff"]
+        # ensure 'cluster' only a column
+        if isinstance(out.index, pd.MultiIndex) and "cluster" in out.index.names:
+            out = out.reset_index(level="cluster")
+        elif out.index.name == "cluster":
+            out = out.reset_index()
+
+        cols = ["cluster","names","scores","logfoldchanges","pvals","pvals_adj",
+                "frac_in_dataset","pct_in_cluster","pct_in_rest","pct_diff"]
         out = out[[c for c in cols if c in out.columns]].copy()
 
         # stable sort: cluster then current sort key
         if "cluster" in out.columns and sort_by_dd.value in out.columns:
             out = out.sort_values(["cluster", sort_by_dd.value],
-                                  ascending=[True, asc_cb.value])
+                                  ascending=[True, bool(asc_cb.value)])
 
-        # ---- Pagination (4 lines) ----
+        # ---- Pagination ----
         total = len(out)
-        page.max = max(1, (total-1)//page_size.value + 1)
-        i = (page.value-1) * page_size.value
-        out_page = out.iloc[i:i + page_size.value]
+        page.max = max(1, (total-1)//int(page_size.value) + 1)
+        i = (int(page.value)-1) * int(page_size.value)
+        out_page = out.iloc[i:i + int(page_size.value)]
 
         with table_out:
             table_out.clear_output(wait=True)
             pd.set_option("display.max_rows", 50)
             pd.set_option("display.max_colwidth", 32)
-            display(HTML(f"<b>{len(out_page):,}</b> rows shown "
-                         f"(page {page.value}/{page.max}; filtered {len(q):,} of base {len(_current_df):,})."))
-            display(out_page.reset_index(drop=True))
 
+            base_n = len(_current_df)
+            filt_n = len(q)
+            display(HTML(
+                f"<small>Source: GitHub raw — {SAMPLE_ID}/{res_dd.value}</small><br>"
+                f"<b>{len(out_page):,}</b> rows shown (page {page.value}/{page.max}; "
+                f"filtered <b>{filt_n:,}</b> of base <b>{base_n:,}</b>)."
+            ))
+
+            if filt_n == 0:
+                display(HTML(
+                    "<span style='color:#b00'><b>No rows after filters.</b></span> "
+                    "Tip: toggle off <i>Only significant</i> or increase <i>p_adj ≤</i>."
+                ))
+                # Show a small unfiltered preview to prove the CSV is fine
+                prev = _current_df[[c for c in cols if c in _current_df.columns]].head(10).copy()
+                display(HTML("<i>Preview of raw rows (first 10):</i>"))
+                display(prev.reset_index(drop=True))
+            else:
+                display(out_page.reset_index(drop=True))
+
+        # ---- Remote PNG preview (let browser load; shows alt on 404) ----
         with png_out:
             png_out.clear_output(wait=True)
-            base = res_dd.value
-            png_path = DE_DIR / f"matrixplot_{base}.png"
-            if png_path.exists():
-                display(Image(filename=str(png_path), embed=True))
-            else:
-                display(HTML(f"<i>No matrix plot found at {png_path.name}</i>"))
+            img_url = _remote_png_url(SAMPLE_ID, res_dd.value)
+            
+            print(img_url)
+            display(HTML(
+                f'<div style="margin-top:6px">'
+                f'<img src="{img_url}" alt="No matrix plot found at {img_url}" style="max-width:100%"/></div>'
+            ))
     finally:
         _updating = False
 
 def _on_res_change(_): _update()
+
 def _export(_):
+    # Save locally even if source is remote
+    dest_dir = Path.cwd() / "DE_exports_local"
+    dest_dir.mkdir(exist_ok=True, parents=True)
     df = _current_df if _current_df is not None else _load_deg(res_dd.value)
     q  = _apply_filters(df)
     out = _topN(q)
@@ -187,7 +297,7 @@ def _export(_):
             "pvals", "pvals_adj", "frac_in_dataset",
             "pct_in_cluster", "pct_in_rest", "pct_diff"]
     out = out[[c for c in cols if c in out.columns]]
-    dest = DE_DIR / f"DEUI_{res_dd.value}_filtered.csv"
+    dest = dest_dir / f"DEUI_{SAMPLE_ID}_{res_dd.value}_filtered.csv"
     out.to_csv(dest, index=False)
     with status_out:
         status_out.clear_output(wait=True)

@@ -7,12 +7,44 @@ from IPython.display import display, HTML
 import ipywidgets as W
 import matplotlib.pyplot as plt
 
-# --- keep your existing mapping from files to resolution keys ---
-def _res_from_path(p: Path) -> str:
-    return p.stem.replace("DE_", "")   # e.g., resolution_leiden_0.5
+# =========================
+#   CONFIG / DATA SOURCE
+# =========================
+# You can set these in the notebook BEFORE exec(...) to override.
+SAMPLE_ID = globals().get("SAMPLE_ID", "IMMUNEX001")  # e.g., IMMUNEX004 ... IMMUNEX015
+HE_SUFFIX = globals().get("HE_SUFFIX", globals().get("SEG_SUFFIX", "he0001"))
 
-resolutions = [_res_from_path(p) for p in de_files]
-res2file = { _res_from_path(p): p for p in de_files }
+# Prefer local files if available (like your original flow) — else fall back to GitHub raw.
+def _local_de_dir():
+    if "DATA_DIR" in globals():
+        return Path(globals()["DATA_DIR"]) / "DE_exports"
+    # Fallback to the repo-like layout if DATA_DIR is not set
+    return Path.cwd() / f"files_{SAMPLE_ID}__{HE_SUFFIX}" / "DE_exports"
+
+def _res_from_path(p: Path) -> str:
+    # file: DE_resolution_leiden_0.5.csv  ->  key: resolution_leiden_0.5
+    return p.stem.replace("DE_", "")
+
+def _remote_url(sample_id: str, res_key: str) -> str:
+    # GitHub raw URL (works without git clone)
+    return (
+        "https://media.githubusercontent.com/media/InforBio/IMMUNEX/refs/heads/main/"
+        f"notebooks/6.Reporting/files_{sample_id}__{HE_SUFFIX}/DE_exports/DE_{res_key}.csv"
+    )
+
+# Discover local CSVs
+DE_DIR = _local_de_dir()
+local_files = 0
+
+if local_files:
+    # Use local
+    resolutions = [_res_from_path(p) for p in local_files]
+    res2file = { _res_from_path(p): str(p) for p in local_files }
+else:
+    # Remote fallback — at least 0.5 exists per your link; extend here if you add more
+    resolutions = ["resolution_leiden_0.5"]
+    res2file = { res: _remote_url(SAMPLE_ID, res) for res in resolutions }
+    print(res2file)
 
 # ---- Panels (same as your post; truncated if you like) ----
 PANEL_NSCLC = {
@@ -77,17 +109,20 @@ PANEL_PA = {
     "Treg": ["BATF","CCR10","CCR8","CTLA4","FOXP3","IKZF2","IKZF4","IL10RA","IL2RA","IL32","TIGIT","TNFRSF18"],
 }
 
+
 # ---------- Widgets ----------
 res_dd   = W.Dropdown(options=resolutions, value=resolutions[0], description="Resolution")
 panel_dd = W.Dropdown(options=["NSCLC panel","P.A. panel"], value="NSCLC panel", description="Markers")
+
 def _current_panel():
     return PANEL_NSCLC if panel_dd.value == "NSCLC panel" else PANEL_PA
 
-ctype_dd = W.Dropdown(options=list(_current_panel().keys()),
-                      value=("Tumor" if "Tumor" in _current_panel() else "Tumor/Epithelial (pan)"),
-                      description="Cell type")
+ctype_dd = W.Dropdown(
+    options=list(_current_panel().keys()),
+    value=("Tumor" if "Tumor" in _current_panel() else "Tumor/Epithelial (pan)"),
+    description="Cell type"
+)
 
-# Value options (unchanged; filters are independent)
 VAL_OPTIONS = [
     "scores","logfoldchanges","pct_diff","pct_in_cluster","pct_in_rest","-log10(pvals_adj)",
     "mean_in","mean_rest","diff_mean","log2fc_mean",
@@ -116,29 +151,25 @@ col_cl_cb  = W.Checkbox(value=True,  description="Cluster cols")
 vmin_ft    = W.FloatText(value=np.nan, description="vmin")
 vmax_ft    = W.FloatText(value=np.nan, description="vmax")
 
-# ---- NEW: gene-level MEAN filters (use mean_in) ----
+# Mean-based filters (using mean_in)
 mean_any_min  = W.FloatText(
+    value=0.05,
     description="≥ mean in any cluster",
     description_tooltip="Keep genes whose max(mean_in across clusters) ≥ this",
-    style={'description_width': '300px'},
-    layout=W.Layout(width='400px'),
-    value=0.05,
+    style={'description_width': '240px'},
+    layout=W.Layout(width='320px'),
 )
-
-
 mean_mean_min = W.FloatText(
-    value=0,
-    description="≥ mean in all clusters",
+    value=0.00,
+    description="≥ mean of means",
     description_tooltip="Keep genes whose mean(mean_in across clusters) ≥ this",
-    style={'description_width': '300px'},
-    layout=W.Layout(width='400px'),
-
+    style={'description_width': '240px'},
+    layout=W.Layout(width='320px'),
 )
-
 
 ui = W.VBox([
-    W.HBox([res_dd, panel_dd, ctype_dd, value_dd]),
-    W.HBox([scale_dd, cmap_dd, hide_small, row_cl_cb, col_cl_cb]),
+    W.HBox([res_dd, panel_dd, ctype_dd, value_dd, agg_dd]),
+    W.HBox([scale_dd, cmap_dd, hide_small, row_cl_cb, col_cl_cb, vmin_ft, vmax_ft]),
     W.HBox([mean_any_min, mean_mean_min]),
 ])
 out = W.Output()
@@ -149,6 +180,7 @@ def _refresh_celltypes(*_):
     default = "Tumor" if "Tumor" in panel else ("Tumor/Epithelial (pan)" if "Tumor/Epithelial (pan)" in panel else opts[0])
     ctype_dd.options = opts
     ctype_dd.value = default
+
 panel_dd.observe(_refresh_celltypes, names="value")
 
 # ---------- Helpers ----------
@@ -161,37 +193,35 @@ NEEDED = [
 ]
 
 def _load_deg(res_key: str) -> pd.DataFrame:
-    df = pd.read_csv(res2file[res_key])
+    src = res2file[res_key]  # path or URL
+    df = pd.read_csv(src)
     for c in NEEDED:
         if c not in df.columns: df[c] = np.nan
     df["cluster"] = df["cluster"].astype(str)
     df["names"]   = df["names"].astype(str)
+    # helper for case-insensitive matching
+    df["names_upper"] = df["names"].str.upper()
     return df
 
 def _prepare_values(df: pd.DataFrame, val_col: str) -> pd.DataFrame:
     X = df.copy()
     if val_col == "-log10(pvals_adj)":
-        V = -np.log10(X["pvals_adj"].astype(float))
+        V = -np.log10(pd.to_numeric(X["pvals_adj"], errors="coerce"))
         V.replace([np.inf, -np.inf], np.nan, inplace=True)
         return X.assign(V=V)
-    if val_col == "nz_mean_delta":
-        return X.assign(V = X["nz_mean_in"] - X["nz_mean_rest"])
-    if val_col == "median_delta_s":
-        return X.assign(V = X["median_in_s"] - X["median_rest_s"])
-    if val_col == "mean_log1p_delta_s":
-        return X.assign(V = X["mean_log1p_in_s"] - X["mean_log1p_rest_s"])
-    if val_col == "zero_frac_delta":
-        return X.assign(V = X["zero_frac_in"] - X["zero_frac_rest"])
-    if val_col in X.columns:
-        return X.rename(columns={val_col: "V"})
+    if val_col == "nz_mean_delta":       return X.assign(V = X["nz_mean_in"] - X["nz_mean_rest"])
+    if val_col == "median_delta_s":      return X.assign(V = X["median_in_s"] - X["median_rest_s"])
+    if val_col == "mean_log1p_delta_s":  return X.assign(V = X["mean_log1p_in_s"] - X["mean_log1p_rest_s"])
+    if val_col == "zero_frac_delta":     return X.assign(V = X["zero_frac_in"] - X["zero_frac_rest"])
+    if val_col in X.columns:             return X.rename(columns={val_col: "V"})
     raise ValueError(f"Unknown value column: {val_col}")
 
-def _build_matrix(df: pd.DataFrame, genes, val_col, agg):
+def _build_matrix(df: pd.DataFrame, genes_display_order, val_col, agg):
     dfv = _prepare_values(df, val_col)
     aggfn = {"max":"max","mean":"mean","median":"median"}[agg]
     aggdf = dfv.groupby(["cluster","names"], as_index=False)["V"].agg(aggfn)
     clusters = sorted(aggdf["cluster"].unique().tolist())
-    mat = aggdf.pivot(index="cluster", columns="names", values="V").reindex(index=clusters, columns=genes)
+    mat = aggdf.pivot(index="cluster", columns="names", values="V").reindex(index=clusters, columns=genes_display_order)
     return mat.astype(float)
 
 def _apply_scale(mat: pd.DataFrame, mode: str):
@@ -213,72 +243,76 @@ def _apply_scale(mat: pd.DataFrame, mode: str):
         return (M - mn) / (mx - mn) if mx != mn else M * np.nan
     return M
 
-def _apply_gene_mean_filters(sub: pd.DataFrame, selected_genes: list):
+def _apply_gene_mean_filters(sub: pd.DataFrame, panel_genes):
     """
-    Compute per-gene stats across clusters using mean_in (full cluster mean).
-    Keeps a gene if:
-      - max mean across clusters ≥ mean_any_min (if set)
-      - mean of means across clusters ≥ mean_mean_min (if set)
-    Missing (gene, cluster) means are treated as 0.
+    Per-gene stats across clusters using mean_in (full cluster mean).
+    Keep gene if:
+      - max(mean_in across clusters) ≥ mean_any_min (if set)
+      - mean(mean_in across clusters) ≥ mean_mean_min (if set)
+    Matching is case-insensitive; missing (gene,cluster) treated as 0.
     """
     if sub.empty:
         return sub, pd.DataFrame(columns=["min_mean","mean_mean","max_mean","n_clusters"])
 
-    G = sub[sub["names"].isin(selected_genes)].copy()
+    # Uppercase matching to be robust
+    panel_up = [g.upper() for g in panel_genes]
+    G = sub[sub["names_upper"].isin(panel_up)].copy()
+    if G.empty:
+        return G, pd.DataFrame(columns=["min_mean","mean_mean","max_mean","n_clusters"])
+
     G["mean_in"] = pd.to_numeric(G["mean_in"], errors="coerce").fillna(0.0)
-    G["cluster"] = G["cluster"].astype(str)
     all_clusters = sorted(sub["cluster"].astype(str).unique().tolist())
 
-    idx = pd.MultiIndex.from_product([selected_genes, all_clusters], names=["names","cluster"])
-    means = (G.set_index(["names","cluster"])["mean_in"]
+    idx = pd.MultiIndex.from_product([panel_up, all_clusters], names=["names_upper","cluster"])
+    means = (G.set_index(["names_upper","cluster"])["mean_in"]
                .reindex(idx, fill_value=0.0)
-               .groupby(level="names")
+               .groupby(level="names_upper")
                .agg(min_mean="min", mean_mean="mean", max_mean="max", n_clusters="count"))
 
     keep = pd.Series(True, index=means.index)
-    if not np.isnan(mean_any_min.value):
-        keep &= (means["max_mean"]  >= float(mean_any_min.value))
-    if not np.isnan(mean_mean_min.value):
-        keep &= (means["mean_mean"] >= float(mean_mean_min.value))
+    if not np.isnan(mean_any_min.value):   keep &= (means["max_mean"]  >= float(mean_any_min.value))
+    if not np.isnan(mean_mean_min.value):  keep &= (means["mean_mean"] >= float(mean_mean_min.value))
 
-    kept_genes = means.index[keep].tolist()
-    Gf = G[G["names"].isin(kept_genes)].copy()
-    return Gf, means.loc[kept_genes]
+    kept_up = set(means.index[keep].tolist())
+    Gf = G[G["names_upper"].isin(kept_up)].copy()
+    return Gf, means.loc[list(kept_up)] if kept_up else (Gf, means.iloc[0:0])
 
 # ---------- Main drawing ----------
 def _draw(*_):
     with out:
         out.clear_output(wait=True)
         res_key = res_dd.value
-        panel_genes = _current_panel()[ctype_dd.value]
+        panel_genes = _current_panel()[ctype_dd.value]  # as given (original case)
         df = _load_deg(res_key)
 
-        # keep clusters ≥0.5% if available
+        # hide tiny clusters if possible
         if hide_small.value and df["frac_in_dataset"].notna().any():
             big = (df[["cluster","frac_in_dataset"]].dropna()
-                   .groupby("cluster", as_index=False)["frac_in_dataset"].max())
+                     .groupby("cluster", as_index=False)["frac_in_dataset"].max())
             keep = set(big.loc[big["frac_in_dataset"] >= 0.005, "cluster"])
             df = df[df["cluster"].isin(keep)]
 
-        # subset to panel genes
-        sub = df[df["names"].isin(panel_genes)].copy()
+        # subset + filtering (robust gene matching)
+        sub = df[df["names_upper"].isin([g.upper() for g in panel_genes])].copy()
         if sub.empty:
             display(HTML(f"<i>No matching genes in {res_key} for {ctype_dd.value}.</i>"))
             return
 
-        # ---- NEW: gene filters based on mean_in across clusters ----
         sub, gene_stats = _apply_gene_mean_filters(sub, panel_genes)
         if sub.empty:
             display(HTML("<i>All genes filtered out by mean thresholds.</i>"))
             return
 
-        genes_kept = [g for g in panel_genes if g in sub["names"].unique()]
+        # preserve panel order using the original case names present in sub
+        present_map = (sub[["names_upper","names"]]
+                        .drop_duplicates()
+                        .set_index("names_upper")["names"]
+                        .to_dict())
+        genes_kept = [present_map[g.upper()] for g in panel_genes if g.upper() in present_map]
 
-        # ---- build matrix and scale ----
+        # build matrix, scale, clean
         mat = _build_matrix(sub, genes_kept, value_dd.value, agg_dd.value)
         mat = _apply_scale(mat, scale_dd.value)
-
-        # --- Clean numeric matrix ---
         mat = mat.replace([np.inf, -np.inf], np.nan)
         mat = mat.dropna(axis=0, how='all').dropna(axis=1, how='all')
         if mat.empty:
@@ -289,7 +323,7 @@ def _draw(*_):
             return
         mat = mat.fillna(0)
 
-        # Row/col ordering
+        # ordering when clustering disabled
         if not row_cl_cb.value:
             order = np.argsort(-np.nanmean(mat.values, axis=1))
             mat = mat.iloc[order, :]
@@ -299,11 +333,11 @@ def _draw(*_):
         vmin = None if np.isnan(vmin_ft.value) else float(vmin_ft.value)
         vmax = None if np.isnan(vmax_ft.value) else float(vmax_ft.value)
 
-        # Header showing how many genes survived
+        # header
         kept_info = f"<small>Kept {len(genes_kept)}/{len(panel_genes)} genes"
         if not np.isnan(mean_any_min.value):  kept_info += f"; max(mean) ≥ {float(mean_any_min.value)}"
         if not np.isnan(mean_mean_min.value): kept_info += f"; mean(mean) ≥ {float(mean_mean_min.value)}"
-        kept_info += "</small>"
+        kept_info += f" — source: {'local' if local_files else 'GitHub raw'} ({res_key})</small>"
         display(HTML(kept_info))
 
         try:
@@ -320,18 +354,17 @@ def _draw(*_):
             )
             g.ax_heatmap.set_xticklabels(g.ax_heatmap.get_xticklabels(), rotation=90, fontsize=8)
             g.ax_heatmap.set_yticklabels(g.ax_heatmap.get_yticklabels(), fontsize=8)
-            g.fig.suptitle(f"{res_key} — {ctype_dd.value} — {panel_dd.value}", y=1.02)
-            display(g.fig)
-            plt.close(g.fig)
+            g.fig.suptitle(f"{SAMPLE_ID} — {res_key} — {ctype_dd.value} — {panel_dd.value}", y=1.02)
+            display(g.fig); plt.close(g.fig)
         except ValueError as e:
             display(HTML(f"<b style='color:red'>Error:</b> {e}<br><i>Try disabling clustering or change scaling.</i>"))
 
 # ---------- Reactivity ----------
 for w in [panel_dd, res_dd, ctype_dd, value_dd, agg_dd, scale_dd, cmap_dd,
-          hide_small, row_cl_cb, col_cl_cb, vmin_ft, vmax_ft,
-          mean_any_min, mean_mean_min]:
+          hide_small, row_cl_cb, col_cl_cb, vmin_ft, vmax_ft, mean_any_min, mean_mean_min]:
     w.observe(_draw, names="value")
 
+# ---------- Show UI ----------
 display(ui, out)
 _refresh_celltypes()
 _draw()
