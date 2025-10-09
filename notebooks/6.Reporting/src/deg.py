@@ -335,7 +335,7 @@ cluster_panel = W.VBox([
     W.Box([clusters_box], layout=W.Layout(max_height='220px', overflow='auto', border='1px solid #ddd', padding='4px'))
 ])
 
-display(W.VBox([controls1, controls2, controls3, cluster_panel, controls_pager, table_out, png_out]))
+display(W.VBox([controls1, controls2, controls3, cluster_panel, controls_pager, table_out]))
 
 # initial draw
 _update()
