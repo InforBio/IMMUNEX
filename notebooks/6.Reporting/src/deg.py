@@ -9,7 +9,7 @@ from IPython.display import display, HTML
 # =========================
 #   REMOTE DATA CONFIG
 # =========================
-SAMPLE_ID = globals().get("SAMPLE_ID", "IMMUNEX001")  # IMMUNEX004..IMMUNEX015
+SAMPLE_ID = globals().get("SAMPLE_ID", "IMMUNEX001")   # e.g. IMMUNEX004..IMMUNEX015
 HE_SUFFIX = globals().get("HE_SUFFIX", globals().get("SEG_SUFFIX", "he0001"))
 
 # Candidate resolutions to expose (extend if you publish more)
@@ -39,7 +39,6 @@ def _read_csv_robust(url: str) -> pd.DataFrame:
     if r.status_code != 200:
         raise RuntimeError(f"HTTP {r.status_code} for {url}")
     text = r.text
-    # Quick 404/HTML guard
     if "<html" in text.lower() or "not found" in text.lower():
         raise RuntimeError(f"URL doesn’t return CSV (HTML/404): {url}")
 
@@ -53,66 +52,59 @@ def _read_csv_robust(url: str) -> pd.DataFrame:
     if REQUIRED_COLS.issubset(set(df_tab.columns)):
         return df_tab
 
-    # If here, show a helpful diagnostic
     raise ValueError(
         f"CSV at {url} missing required cols.\n"
         f"Found columns: {list(df.columns) if len(df.columns)>0 else '<<none>>'}"
     )
 
 # Probe which resolutions actually exist and are valid
-resolutions = []
-res2file    = {}
+resolutions, res2file = [], {}
 for r in RES_CANDIDATES:
     url = _remote_csv_url(SAMPLE_ID, r)
-    print(f'DE Table from :', url)
     try:
-        df_probe = _read_csv_robust(url)
+        _ = _read_csv_robust(url)
         resolutions.append(r)
         res2file[r] = url
     except Exception:
         pass
 
-
-
-
 if not resolutions:
-    # Last resort: expose 0.5 and let the UI show the error text cleanly
     resolutions = ["resolution_leiden_0.5"]
     res2file[resolutions[0]] = _remote_csv_url(SAMPLE_ID, resolutions[0])
 
 # ---------- Widgets ----------
-res_dd      = W.Dropdown(options=resolutions, value=resolutions[0], description="Resolution")
-top_mode_dd = W.Dropdown(options=["Per-cluster top N", "Global top N"], value="Per-cluster top N", description="Top mode")
-topN_sl     = W.IntSlider(value=20, min=5, max=200, step=5, description="Top N", continuous_update=False)
+res_dd        = W.Dropdown(options=resolutions, value=resolutions[0], description="Resolution")
+top_mode_dd   = W.Dropdown(options=["Per-cluster top N", "Global top N"], value="Per-cluster top N", description="Top mode")
+topN_sl       = W.IntSlider(value=20, min=5, max=200, step=5, description="Top N", continuous_update=False)
 
 # Filters
-pval_max    = W.FloatText(value=1.0,  description="pval ≤",    step=1e-4)
-padj_max    = W.FloatText(value=0.05, description="p_adj ≤",   step=1e-4)
-lfc_min     = W.FloatText(value=0.0,  description="logFC ≥",   step=0.1)
-pdiff_min   = W.FloatText(value=0.0,  description="pct_diff ≥", step=1.0)
+pval_max      = W.FloatText(value=1.0,  description="pval ≤",    step=1e-4)
+padj_max      = W.FloatText(value=0.05, description="p_adj ≤",   step=1e-4)
+lfc_min       = W.FloatText(value=0.0,  description="logFC ≥",   step=0.1)
+pdiff_min     = W.FloatText(value=0.0,  description="pct_diff ≥", step=1.0)
 
 # Sort
-sort_by_dd  = W.Dropdown(
+sort_by_dd    = W.Dropdown(
     options=["scores","logfoldchanges","pvals_adj","pvals","pct_diff","pct_in_cluster","pct_in_rest"],
     value="scores", description="Sort by"
 )
-asc_cb      = W.Checkbox(value=False, description="Ascending")
+asc_cb        = W.Checkbox(value=False, description="Ascending")
 
 # Cluster selection panel
-hide_small_cb = W.Checkbox(value=True, description="Hide clusters <0.5%")
-clusters_box  = W.VBox([])  # filled dynamically with Checkboxes
-select_all_btn  = W.Button(description="All", layout=W.Layout(width="60px"))
-select_none_btn = W.Button(description="None", layout=W.Layout(width="60px"))
+hide_small_cb   = W.Checkbox(value=True, description="Hide clusters <0.5%")
+clusters_box    = W.VBox([])  # filled dynamically with Checkboxes
+select_all_btn  = W.Button(description="Select all",   layout=W.Layout(width="100px"))
+select_none_btn = W.Button(description="Unselect all", layout=W.Layout(width="100px"))
 
 # Gene filter, quick toggles
-gene_q      = W.Text(value="", description="Gene contains")
-only_up_cb  = W.Checkbox(value=False, description="Only upregulated (logFC>0)")
-sig_cb      = W.Checkbox(value=True,  description="Only significant")
-alpha_ft    = W.FloatText(value=0.05, description="α (p_adj)", step=1e-4)
+gene_q        = W.Text(value="", description="Gene contains")
+only_up_cb    = W.Checkbox(value=False, description="Only upregulated (logFC>0)")
+sig_cb        = W.Checkbox(value=True,  description="Only significant")
+alpha_ft      = W.FloatText(value=0.05, description="α (p_adj)", step=1e-4)
 
 # Pagination
-page_size = W.IntSlider(value=50, min=10, max=500, step=10, description="Rows/page")
-page      = W.IntSlider(value=1, min=1, max=1, step=1, description="Page")
+page_size   = W.IntSlider(value=50, min=10, max=500, step=10, description="Rows/page")
+page        = W.IntSlider(value=1, min=1, max=1, step=1, description="Page")
 
 # I/O
 export_btn  = W.Button(description="Export filtered CSV", button_style="")
@@ -136,23 +128,37 @@ def _load_deg(res_key: str) -> pd.DataFrame:
         if c not in df.columns:
             df[c] = np.nan
 
-    # Types & cleanliness
     df["cluster"] = df["cluster"].astype(str)
     df["names"]   = df["names"].astype(str)
 
-    # Ensure only columns (avoid index leaks)
+    # Ensure we don't carry index levels
     if isinstance(df.index, pd.MultiIndex) or df.index.name is not None:
         df = df.reset_index(drop=True)
     return df
 
 def _get_selected_clusters():
-    return [cb.description for cb in clusters_box.children if isinstance(cb, W.Checkbox) and cb.value]
+    return [
+        cb.description
+        for cb in clusters_box.children
+        if isinstance(cb, W.Checkbox) and cb.value
+    ]
+
+def _wire_cluster_observers():
+    """Attach .observe to each checkbox so toggling updates the table."""
+    def _mk_handler():
+        return lambda change: (not _updating) and _update()
+    for cb in clusters_box.children:
+        if isinstance(cb, W.Checkbox):
+            cb.observe(_mk_handler(), names="value")
 
 def _refresh_clusters_options(df: pd.DataFrame):
+    """(Re)build the checkbox list, preserving current selections where possible."""
     global _updating
     if _updating: return
     _updating = True
     try:
+        prev_selected = set(_get_selected_clusters())
+
         if "frac_in_dataset" in df.columns and df["frac_in_dataset"].notna().any():
             by_cl = (df[["cluster","frac_in_dataset"]]
                      .dropna()
@@ -163,14 +169,22 @@ def _refresh_clusters_options(df: pd.DataFrame):
             clusters = by_cl["cluster"].astype(str).tolist()
         else:
             clusters = sorted(df["cluster"].astype(str).unique().tolist())
+
         clusters = sorted(clusters, key=lambda x: (len(x), x))
-        clusters_box.children = [W.Checkbox(value=True, description=c, indent=False) for c in clusters]
+        # default select = True; but re-apply previous if present
+        new_children = []
+        for c in clusters:
+            val = True if (not prev_selected) else (c in prev_selected)
+            new_children.append(W.Checkbox(value=val, description=c, indent=False))
+        clusters_box.children = new_children
+        _wire_cluster_observers()
     finally:
         _updating = False
 
 def _apply_filters(df: pd.DataFrame) -> pd.DataFrame:
     q = df.copy()
-    # significance filter first
+
+    # Significance + numeric filters
     if sig_cb.value and "pvals_adj" in q.columns:
         q = q[pd.to_numeric(q["pvals_adj"], errors="coerce") <= float(alpha_ft.value)]
     if "pvals" in q.columns:
@@ -184,13 +198,17 @@ def _apply_filters(df: pd.DataFrame) -> pd.DataFrame:
     if only_up_cb.value and "logfoldchanges" in q.columns:
         q = q[pd.to_numeric(q["logfoldchanges"], errors="coerce") > 0]
 
+    # Cluster selection (strict: none selected → show none)
     sel_clusters = _get_selected_clusters()
-    if sel_clusters:
-        q = q[q["cluster"].isin(sel_clusters)]
+    if len(sel_clusters) == 0:
+        return q.iloc[0:0].copy()
+    q = q[q["cluster"].isin(sel_clusters)]
 
+    # Gene substring filter
     if gene_q.value.strip():
         pat = gene_q.value.strip().lower()
         q = q[q["names"].str.lower().str.contains(pat, na=False)]
+
     return q
 
 def _topN(df: pd.DataFrame) -> pd.DataFrame:
@@ -199,7 +217,7 @@ def _topN(df: pd.DataFrame) -> pd.DataFrame:
     if key not in df.columns:
         return df.head(0)
     if top_mode_dd.value.startswith("Per-cluster"):
-        # Sort first, then groupby-head to avoid MultiIndex and ambiguity
+        # Sort first, then groupby-head to avoid MultiIndex
         return (
             df.sort_values(["cluster", key], ascending=[True, ascending])
               .groupby("cluster", as_index=False, sort=False)
@@ -226,7 +244,7 @@ def _update(*_):
         q = _apply_filters(_current_df)
         out = _topN(q)
 
-        # ensure 'cluster' only a column
+        # ensure 'cluster' is only a column
         if isinstance(out.index, pd.MultiIndex) and "cluster" in out.index.names:
             out = out.reset_index(level="cluster")
         elif out.index.name == "cluster":
@@ -241,9 +259,10 @@ def _update(*_):
             out = out.sort_values(["cluster", sort_by_dd.value],
                                   ascending=[True, bool(asc_cb.value)])
 
-        # ---- Pagination ----
+        # Pagination
         total = len(out)
         page.max = max(1, (total-1)//int(page_size.value) + 1)
+        page.value = min(page.value, page.max)
         i = (int(page.value)-1) * int(page_size.value)
         out_page = out.iloc[i:i + int(page_size.value)]
 
@@ -265,23 +284,21 @@ def _update(*_):
                     "<span style='color:#b00'><b>No rows after filters.</b></span> "
                     "Tip: toggle off <i>Only significant</i> or increase <i>p_adj ≤</i>."
                 ))
-                # Show a small unfiltered preview to prove the CSV is fine
                 prev = _current_df[[c for c in cols if c in _current_df.columns]].head(10).copy()
                 display(HTML("<i>Preview of raw rows (first 10):</i>"))
                 display(prev.reset_index(drop=True))
             else:
                 display(out_page.reset_index(drop=True))
 
-        # ---- Remote PNG preview (let browser load; shows alt on 404) ----
+        # Optional remote PNG preview (inline)
+        img_url = _remote_png_url(SAMPLE_ID, res_dd.value)
         with png_out:
             png_out.clear_output(wait=True)
-            img_url = _remote_png_url(SAMPLE_ID, res_dd.value)
-            
-            print(img_url)
             display(HTML(
                 f'<div style="margin-top:6px">'
                 f'<img src="{img_url}" alt="No matrix plot found at {img_url}" style="max-width:100%"/></div>'
             ))
+
     finally:
         _updating = False
 
@@ -306,12 +323,14 @@ def _export(_):
 
 def _select_all(_):
     for cb in clusters_box.children:
-        if isinstance(cb, W.Checkbox): cb.value = True
+        if isinstance(cb, W.Checkbox):
+            cb.value = True
     _update()
 
 def _select_none(_):
     for cb in clusters_box.children:
-        if isinstance(cb, W.Checkbox): cb.value = False
+        if isinstance(cb, W.Checkbox):
+            cb.value = False
     _update()
 
 # ---------- Wire events & layout ----------
@@ -332,10 +351,11 @@ controls_pager = W.HBox([page_size, page])
 
 cluster_panel = W.VBox([
     W.HBox([W.Label("Clusters"), hide_small_cb, select_all_btn, select_none_btn]),
-    W.Box([clusters_box], layout=W.Layout(max_height='220px', overflow='auto', border='1px solid #ddd', padding='4px'))
+    W.Box([clusters_box], layout=W.Layout(max_height='220px', overflow='auto',
+                                          border='1px solid #ddd', padding='4px'))
 ])
 
-display(W.VBox([controls1, controls2, controls3, cluster_panel, controls_pager, table_out]))
+display(W.VBox([controls1, controls2, controls3, cluster_panel, controls_pager, table_out, png_out]))
 
 # initial draw
 _update()
